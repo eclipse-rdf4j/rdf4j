@@ -26,6 +26,12 @@ final class NativeResultSteps {
 	private NativeResultSteps() {
 	}
 
+	/** Preserve an explicit lexical consumer demand without changing ordinary public RDF evaluation. */
+	static NativeResultCursor openRelation(QueryEvaluationStep step, BindingSet bindings) {
+		return step instanceof NativeResultStep nativeStep ? nativeStep.evaluateNativeRelation(bindings)
+				: open(step, bindings);
+	}
+
 	static NativeResultCursor open(QueryEvaluationStep step, BindingSet bindings) {
 		if (step instanceof NativeResultStep nativeStep) {
 			return nativeStep.evaluateNative(bindings);

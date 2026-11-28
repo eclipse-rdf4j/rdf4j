@@ -19,6 +19,11 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelRootCountReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountWorker;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
@@ -31,7 +36,21 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 
 	private static final long UNKNOWN = LmdbNativeAggregateCompiler.UNKNOWN;
-	private static final int ROOT_WINDOW_SIZE = 256;
+	static final int ROOT_WINDOW_SIZE = 256;
+
+	static void checkPhysicalCancellation(NativeCancellationToken cancellation) {
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+	}
+
+	static Runnable physicalCancellation(NativeCancellationToken cancellation) {
+		return () -> checkPhysicalCancellation(cancellation);
+	}
+
+	/** Exact metadata for a bounded, unrestricted root-count scan on one retained source. */
+	record Receipt(int predicates, long roots, long quads, long pages, long largestRootDomain,
+			long providerFixedBytes, long providerBytesPerPlane) {
+	}
 
 	private interface PlaneRootCursor extends AutoCloseable {
 		int fillRootCounts(long[] roots, long[] multiplicities, int maximum);
@@ -54,9 +73,9 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 
 		@Override
 		public int fillRootCounts(long[] roots, long[] multiplicities, int maximum) {
-			cancellation.check();
+			checkPhysicalCancellation(cancellation);
 			int copied = cursor.fillRootCounts(roots, 0, multiplicities, 0, maximum);
-			cancellation.check();
+			checkPhysicalCancellation(cancellation);
 			if (telemetry != null) {
 				telemetry.rootsVisited(copied);
 				telemetry.rootIdsDecoded(copied);
@@ -205,31 +224,13 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 
 		@Override
 		public void close() {
-			Throwable failure = null;
-			try {
-				cursor.close();
-			} catch (RuntimeException | Error problem) {
-				failure = problem;
-			}
-			try {
-				adjacency.close();
-			} catch (RuntimeException | Error problem) {
-				if (failure == null) {
-					failure = problem;
-				} else if (failure != problem) {
-					failure.addSuppressed(problem);
-				}
-			}
-			if (failure instanceof Error) {
-				throw (Error) failure;
-			}
-			if (failure != null) {
-				throw (RuntimeException) failure;
-			}
+			Throwable failure = KernelRuntime.closeResource(cursor, null);
+			failure = KernelRuntime.closeResource(adjacency, failure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, null);
 		}
 	}
 
-	private final NativeLmdbQuerySource.NativeProbe probe;
+	private final RootCountProbe probe;
 	private final NativeCancellationToken cancellation;
 	private final Plane[] planes;
 	private final int[] heap;
@@ -240,7 +241,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 	private boolean closed;
 	private int pollTick;
 
-	private LmdbAdjacencyRootDomainCursor(NativeLmdbQuerySource.NativeProbe probe, Plane[] planes,
+	private LmdbAdjacencyRootDomainCursor(RootCountProbe probe, Plane[] planes,
 			NativeCancellationToken cancellation) {
 		this.probe = probe;
 		this.cancellation = cancellation;
@@ -254,8 +255,191 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		}
 	}
 
+	/** Opens one exact retained-worker range without a dataset, LMDB reader, or alternate producer. */
+	static LmdbAdjacencyRootDomainCursor openWorker(RootCountWorker worker, ParallelRootCountReceipt receipt,
+			long[] predicates, boolean hasLowerBound, long lowerBound, boolean hasUpperBound, long upperBound,
+			NativeCancellationToken cancellation) throws IOException {
+		checkPhysicalCancellation(cancellation);
+		if (worker.viewAuthority() != receipt.viewAuthority() || worker.bySubject() != receipt.bySubject()
+				|| worker.explicit() != receipt.explicit() || worker.predicateCount() != predicates.length) {
+			return null;
+		}
+		RootCountProbe probe = worker.newProbe();
+		if (probe == null) {
+			return null;
+		}
+		Plane[] opened = null;
+		NativeAdjacency pending = null;
+		NativeAdjacency.KeyRunCursor pendingCursor = null;
+		int count = 0;
+		boolean transferred = false;
+		Throwable primary = null;
+		try {
+			opened = new Plane[predicates.length];
+			Runnable physicalCancellation = physicalCancellation(cancellation);
+			if (probe.rootCountViewAuthority() != receipt.viewAuthority()) {
+				return null;
+			}
+			for (int index = 0; index < predicates.length; index++) {
+				checkPhysicalCancellation(cancellation);
+				if (worker.predicateAt(index) != predicates[index]) {
+					return null;
+				}
+				pending = probe.adjacency(predicates[index], receipt.bySubject());
+				if (pending == null || !pending.supportsKeyEnumeration() || !pending.keysImplyNonEmptyRuns()
+						|| !pending.orderedKeyRunsWithBoundedOpen()) {
+					return null;
+				}
+				long keys = pending.keyCount();
+				long from = hasLowerBound ? pending.lowerBoundKeyOrdinal(lowerBound, physicalCancellation) : 0L;
+				long to = hasUpperBound ? pending.lowerBoundKeyOrdinal(upperBound, physicalCancellation) : keys;
+				if (keys < 0L || from < 0L || to < from || to > keys) {
+					return null;
+				}
+				pendingCursor = pending.openKeyRunCursor(from, to, physicalCancellation);
+				if (pendingCursor == null) {
+					return null;
+				}
+				opened[count++] = new Plane(predicates[index], pending,
+						new KeyPlaneRootCursor(pendingCursor, null, cancellation));
+				pending = null;
+				pendingCursor = null;
+			}
+			LmdbAdjacencyRootDomainCursor result = new LmdbAdjacencyRootDomainCursor(probe, opened, cancellation);
+			transferred = true;
+			return result;
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (!transferred) {
+				Throwable retained = KernelRuntime.closeResource(pendingCursor, primary);
+				retained = KernelRuntime.closeResource(pending, retained);
+				if (opened != null) {
+					for (int index = 0; index < count; index++) {
+						retained = KernelRuntime.closeResource(opened[index], retained);
+					}
+				}
+				retained = KernelRuntime.closeResource(probe, retained);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, primary);
+			}
+		}
+	}
+
 	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject) throws IOException {
 		return open(source, bySubject, NativeCancellationToken.forSource(source));
+	}
+
+	/**
+	 * Validates every plane against the prepared receipt before opening any root producer, then transfers the same
+	 * probe and validated plane views into the merge. A vanished or changed capability is a clean refusal.
+	 */
+	static LmdbAdjacencyRootDomainCursor openCertified(NativeLmdbQuerySource source, boolean bySubject,
+			Receipt receipt, NativeCancellationToken cancellation) throws IOException {
+		NativeProbe probe = source.newProbe();
+		WildcardAdjacency catalog = null;
+		NativeAdjacency[] retained = null;
+		Plane[] opened = null;
+		int openedCount = 0;
+		boolean transferred = false;
+		Throwable primary = null;
+		try {
+			cancellation.check();
+			catalog = probe.boundedPredicateSweep(bySubject);
+			if (catalog == null || catalog.predicateCount() != receipt.predicates()) {
+				return null;
+			}
+			int count = receipt.predicates();
+			retained = new NativeAdjacency[count];
+			opened = new Plane[count];
+			long[] predicates = new long[count];
+			long[] rootCounts = new long[count];
+			long roots = 0L, quads = 0L, pages = 0L;
+			for (int index = 0; index < count; index++) {
+				cancellation.poll(index);
+				long predicate = catalog.predicateAt(index);
+				if (index != 0 && Long.compareUnsigned(predicates[index - 1], predicate) >= 0) {
+					return null;
+				}
+				predicates[index] = predicate;
+				catalog.bind(index);
+				long planeRoots = catalog.keyCount();
+				long planeQuads = catalog.quadCount();
+				long planePages = catalog.pageCount();
+				if (planeRoots < 0L || planeQuads < planeRoots || planePages < 0L
+						|| planeRoots > receipt.roots() - roots || planeQuads > receipt.quads() - quads
+						|| planePages > receipt.pages() - pages
+						|| (planeRoots == 0L) != (planeQuads == 0L)) {
+					return null;
+				}
+				roots += planeRoots;
+				quads += planeQuads;
+				pages += planePages;
+				rootCounts[index] = planeRoots;
+				if (planeRoots == 0L) {
+					if (planePages != 0L) {
+						return null;
+					}
+					continue;
+				}
+				NativeAdjacency adjacency = probe.adjacency(predicate, bySubject);
+				retained[index] = adjacency;
+				if (adjacency == null || !adjacency.supportsKeyEnumeration() || !adjacency.keysImplyNonEmptyRuns()
+						|| !adjacency.orderedKeyRunsWithBoundedOpen() || adjacency.keyCount() != planeRoots
+						|| adjacency.pageCount() != planePages) {
+					return null;
+				}
+			}
+			if (roots != receipt.roots() || quads != receipt.quads() || pages != receipt.pages()) {
+				return null;
+			}
+			// The catalog owns a separate reusable cursor. Close it before the root cursors start consuming rows.
+			WildcardAdjacency validatedCatalog = catalog;
+			catalog = null;
+			validatedCatalog.close();
+			for (int index = 0; index < count; index++) {
+				cancellation.poll(index);
+				NativeAdjacency adjacency = retained[index];
+				if (adjacency == null) {
+					continue;
+				}
+				NativeAdjacency.KeyRunCursor cursor = adjacency.openKeyRunCursor(0L, rootCounts[index]);
+				if (cursor == null) {
+					return null;
+				}
+				try {
+					cursor.cancellationPoll(physicalCancellation(cancellation));
+					opened[openedCount++] = new Plane(predicates[index], adjacency,
+							new KeyPlaneRootCursor(cursor, null, cancellation));
+					retained[index] = null;
+				} catch (RuntimeException | Error failure) {
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(cursor, failure),
+							failure);
+					throw failure;
+				}
+			}
+			LmdbAdjacencyRootDomainCursor result = new LmdbAdjacencyRootDomainCursor(probe,
+					Arrays.copyOf(opened, openedCount), cancellation);
+			transferred = true;
+			return result;
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			if (!transferred) {
+				Throwable failure = KernelRuntime.closeResource(catalog, primary);
+				for (int index = 0; index < openedCount; index++) {
+					failure = KernelRuntime.closeResource(opened[index], failure);
+				}
+				if (retained != null) {
+					for (NativeAdjacency adjacency : retained) {
+						failure = KernelRuntime.closeResource(adjacency, failure);
+					}
+				}
+				failure = KernelRuntime.closeResource(probe, failure);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, primary);
+			}
+		}
 	}
 
 	static LmdbAdjacencyRootDomainCursor open(NativeLmdbQuerySource source, boolean bySubject,
@@ -323,7 +507,7 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 				NativeAdjacency adjacency = probe.adjacency(predicate, bySubject);
 				if (adjacency == null || !adjacency.supportsKeyEnumeration() || !adjacency.keysImplyNonEmptyRuns()) {
 					closeAdjacency(adjacency);
-					closePlanes(opened, count, null);
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(closePlanes(opened, count, null), null);
 					probe.close();
 					return null;
 				}
@@ -339,12 +523,20 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 					long to = hasUpperBound ? adjacency.lowerBoundKeyOrdinal(upperBound) : adjacency.keyCount();
 					NativeAdjacency.KeyRunCursor keyRuns = adjacency.openKeyRunCursor(from, to);
 					if (keyRuns != null) {
-						cursor = new KeyPlaneRootCursor(keyRuns, telemetry, cancellation);
+						try {
+							keyRuns.cancellationPoll(physicalCancellation(cancellation));
+							cursor = new KeyPlaneRootCursor(keyRuns, telemetry, cancellation);
+						} catch (RuntimeException | Error failure) {
+							Throwable retained = KernelRuntime.closeResource(keyRuns, failure);
+							retained = KernelRuntime.closeResource(adjacency, retained);
+							KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, failure);
+							throw failure;
+						}
 					}
 				}
 				if (cursor == null) {
 					adjacency.close();
-					closePlanes(opened, count, null);
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(closePlanes(opened, count, null), null);
 					probe.close();
 					return null;
 				}
@@ -504,27 +696,9 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 			return;
 		}
 		closed = true;
-		Throwable failure = null;
-		try {
-			closePlanes(planes, planes.length, null);
-		} catch (RuntimeException | Error problem) {
-			failure = problem;
-		}
-		try {
-			probe.close();
-		} catch (RuntimeException | Error problem) {
-			if (failure == null) {
-				failure = problem;
-			} else if (failure != problem) {
-				failure.addSuppressed(problem);
-			}
-		}
-		if (failure instanceof Error) {
-			throw (Error) failure;
-		}
-		if (failure != null) {
-			throw new IllegalStateException("could not close adjacency root-domain cursor", failure);
-		}
+		Throwable failure = closePlanes(planes, planes.length, null);
+		failure = KernelRuntime.closeResource(probe, failure);
+		KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, null);
 	}
 
 	private static void closeAdjacency(NativeAdjacency adjacency) {
@@ -533,26 +707,10 @@ final class LmdbAdjacencyRootDomainCursor implements AutoCloseable {
 		}
 	}
 
-	private static void closePlanes(Plane[] planes, int count, Throwable primary) {
-		Throwable failure = primary;
+	private static Throwable closePlanes(Plane[] planes, int count, Throwable failure) {
 		for (int i = 0; i < count; i++) {
-			try {
-				planes[i].close();
-			} catch (RuntimeException | Error problem) {
-				if (failure == null) {
-					failure = problem;
-				} else if (failure != problem) {
-					failure.addSuppressed(problem);
-				}
-			}
+			failure = KernelRuntime.closeResource(planes[i], failure);
 		}
-		if (primary == null) {
-			if (failure instanceof Error) {
-				throw (Error) failure;
-			}
-			if (failure != null) {
-				throw (RuntimeException) failure;
-			}
-		}
+		return failure;
 	}
 }

@@ -30,8 +30,17 @@ import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager.QueryLedger;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelRootCountReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.PredicateProjectionStatistics;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountWorker;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountWorkspace;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -43,7 +52,7 @@ import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
  * corrupt its count) and per-worker histograms summed at the end.
  */
 @Experimental
-final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
+final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative.WithVariants {
 	private static final int DENSE_ROOT_CAPACITY = (256 << 10) / Long.BYTES;
 	private static final int ADJACENCY_RANGES_PER_WORKER = 16;
 	private static final int ADJACENCY_STRIPE_RANGES = 16;
@@ -115,10 +124,550 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 
 	@Override
 	public Prepared prepare(RowState row) throws IOException {
+		Preparation preparation = inspect(row);
+		return preparation.primary() != null ? preparation.primary() : preparation.bound().unpriced(row, false);
+	}
+
+	private Preparation inspect(RowState row) throws IOException {
 		LmdbNativeRunCountHistogram bound = new LmdbNativeRunCountHistogram(this, row.source);
-		return NativeAggregateAlternative.unpriced(row, bound.estimateWork(row.source), originalExpr,
+		if (bound.rootAdmissionEligible(row)) {
+			RootCountWorkspace workspace = bound.source.rootCountWorkspace(true);
+			if (workspace != null) {
+				AdmissionPolicy policy = bound.admissionPolicy();
+				if (policy.parallel()) {
+					ParallelAdmission admission = bound.parallelAdmission(row, workspace, policy);
+					if (admission != null) {
+						return new Preparation(bound, bound.new PreparedParallel(row, admission), policy);
+					}
+				} else {
+					SerialAdmission admission = bound.serialAdmission(row, workspace, policy);
+					if (admission != null) {
+						return new Preparation(bound, bound.new PreparedSerial(row, admission), policy);
+					}
+				}
+				return new Preparation(bound, null, policy);
+			}
+		}
+		return new Preparation(bound, null, null);
+	}
+
+	private Prepared unpriced(RowState row, boolean certifiedAlternative) throws IOException {
+		// A complete alternative makes the unpriced legacy estimate unnecessary and avoids an unreserved extra probe.
+		LmdbNativeWork work = certifiedAlternative ? LmdbNativeWork.UNKNOWN : estimateWork(row.source);
+		return NativeAggregateAlternative.unpriced(row, work, originalExpr,
 				LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM,
-				(bindings, owner) -> bound.evaluate(bindings, owner, true));
+				(bindings, owner) -> evaluate(bindings, owner, true));
+	}
+
+	@Override
+	public List<Variant> prepareVariants(RowState row, String primaryTag, String forcing) throws IOException {
+		Preparation preparation = inspect(row);
+		String serialTag = primaryTag + "(serial)";
+		int requested = 0;
+		for (String option : LmdbNativeForceableStrategies.options(forcing)) {
+			if (option.equals(serialTag)) {
+				requested = 1;
+				break;
+			}
+			if (option.equals(primaryTag)) {
+				requested = -1;
+				break;
+			}
+		}
+		Prepared serial = null;
+		if (preparation.policy() != null && preparation.policy().parallel() && requested >= 0) {
+			serial = preparation.bound().prepareSerial(row, preparation.policy());
+		}
+		Prepared primary = preparation.primary() != null ? preparation.primary()
+				: preparation.bound().unpriced(row, serial != null);
+		Variant configured = new Variant(primaryTag, primary);
+		if (serial != null) {
+			return List.of(configured, new Variant(serialTag, serial));
+		} else if (primary instanceof PreparedSerial && requested > 0) {
+			// The exact alias is only present when requested; AUTO keeps one copy of an already-serial recipe.
+			return List.of(configured, new Variant(serialTag, primary));
+		}
+		return List.of(configured);
+	}
+
+	private Prepared prepareSerial(RowState row, AdmissionPolicy policy) throws IOException {
+		RootCountWorkspace workspace = source.rootCountWorkspace(true);
+		if (workspace == null) {
+			return null;
+		}
+		SerialAdmission admission = serialAdmission(row, workspace, policy);
+		return admission == null ? null : new PreparedSerial(row, admission);
+	}
+
+	private record Preparation(LmdbNativeRunCountHistogram bound, Prepared primary, AdmissionPolicy policy) {
+	}
+
+	private record AdmissionPolicy(int threads, long threshold, boolean parallel) {
+		boolean current() {
+			return threads == LmdbNativeParallelPipelines.configuredThreads() && threshold == parallelThreshold();
+		}
+	}
+
+	private record SerialAdmission(LmdbAdjacencyRootDomainCursor.Receipt receipt, AdmissionPolicy policy) {
+	}
+
+	private record ParallelAdmission(ParallelRootCountReceipt receipt, AdmissionPolicy policy, long countStoreBytes) {
+	}
+
+	private static long parallelThreshold() {
+		return Long.getLong(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+				LmdbNativeParallelPrefixRuns.DEFAULT_PARALLEL_MIN_ESTIMATE);
+	}
+
+	/** Freeze the original serial/parallel admission decision without rerunning its estimator at execution. */
+	private AdmissionPolicy admissionPolicy() {
+		int threads = LmdbNativeParallelPipelines.configuredThreads();
+		long threshold = parallelThreshold();
+		boolean parallel = false;
+		if (threads >= 2) {
+			if (threshold <= 0L) {
+				parallel = true;
+			} else {
+				double estimate = source.estimate(subj, pred, obj, LmdbNativeAggregateCompiler.UNKNOWN);
+				parallel = Double.isFinite(estimate) && estimate >= threshold;
+			}
+		}
+		return new AdmissionPolicy(threads, threshold, parallel);
+	}
+
+	private boolean rootAdmissionEligible(RowState row) {
+		return row.source == source && row.base.isEmpty() && row.boundMask() == 0L
+				&& LmdbNativeTermAuthority.canonicalPatternIds(source) && adjacencyEligible();
+	}
+
+	/** Inspect only bounded metadata; no root or page cursor is opened while quoting. */
+	private SerialAdmission serialAdmission(RowState row, RootCountWorkspace sourceWorkspace, AdmissionPolicy policy)
+			throws IOException {
+		NativeCancellationToken cancellation = row.cancellation;
+		PredicateProjectionStatistics stats = source.predicateProjectionStatistics(true, cancellation::check);
+		if (stats == null || stats.predicates() > Integer.MAX_VALUE
+				|| sourceWorkspace.planeBytes() > (Long.MAX_VALUE - sourceWorkspace.fixedBytes())
+						/ (stats.predicates() + 1L)) {
+			return null;
+		}
+		try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+				.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))) {
+			if (!memory.tryReserve(sourceWorkspace.fixedBytes() + sourceWorkspace.planeBytes())) {
+				return null;
+			}
+			try (NativeProbe probe = source.newProbe();
+					WildcardAdjacency catalog = probe.boundedPredicateSweep(true)) {
+				if (catalog == null || catalog.predicateCount() != stats.predicates()) {
+					return null;
+				}
+				long roots = 0L, quads = 0L, pages = 0L, previous = 0L;
+				for (int index = 0; index < stats.predicates(); index++) {
+					cancellation.poll(index);
+					LmdbNativeProbeDeadline.poll(index);
+					long predicate = catalog.predicateAt(index);
+					if (index != 0 && Long.compareUnsigned(previous, predicate) >= 0) {
+						return null;
+					}
+					previous = predicate;
+					catalog.bind(index);
+					long planeRoots = catalog.keyCount();
+					long planeQuads = catalog.quadCount();
+					long planePages = catalog.pageCount();
+					if (planeRoots < 0L || planeQuads < planeRoots || planePages < 0L
+							|| planeRoots > stats.incidences() - roots || planeQuads > stats.quads() - quads
+							|| planePages > Long.MAX_VALUE - pages
+							|| (planeRoots == 0L) != (planeQuads == 0L)
+							|| planeRoots == 0L && planePages != 0L) {
+						return null;
+					}
+					roots += planeRoots;
+					quads += planeQuads;
+					pages += planePages;
+				}
+				if (roots != stats.incidences() || quads != stats.quads()) {
+					return null;
+				}
+				return new SerialAdmission(new LmdbAdjacencyRootDomainCursor.Receipt((int) stats.predicates(), roots,
+						quads, pages, stats.largestRootDomain(), sourceWorkspace.fixedBytes(),
+						sourceWorkspace.planeBytes()),
+						policy);
+			}
+		}
+	}
+
+	/** A parallel receipt is a facts-only snapshot; source workers are opened only after execution reservation. */
+	private ParallelAdmission parallelAdmission(RowState row, RootCountWorkspace workspace, AdmissionPolicy policy) {
+		try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+				.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()))) {
+			if (workspace.fixedBytes() > Long.MAX_VALUE - workspace.planeBytes()
+					|| !memory.tryReserve(workspace.fixedBytes() + workspace.planeBytes())) {
+				return null;
+			}
+			ParallelRootCountReceipt receipt = source.parallelRootCountReceipt(true,
+					LmdbAdjacencyRootDomainCursor.physicalCancellation(row.cancellation));
+			if (receipt == null || !receipt.bySubject() || receipt.firstRoot() == receipt.lastRoot()
+					|| !subjectReference(receipt.firstRoot()) || !subjectReference(receipt.lastRoot())
+					|| receipt.workspace().fixedBytes() > workspace.fixedBytes()
+					|| receipt.workspace().planeBytes() > workspace.planeBytes()
+					|| parallelWorkspaceBytes(receipt, policy.threads(),
+							parallelRangeCount(receipt, policy.threads())) < 0L) {
+				return null;
+			}
+			return new ParallelAdmission(receipt, policy, NativeCountGroupStore.configuredMaxBytes());
+		}
+	}
+
+	private static boolean subjectReference(long root) {
+		int type = ValueIds.getIdType(root);
+		return type == ValueIds.T_URI || type == ValueIds.T_BNODE || type == ValueIds.T_TRIPLE;
+	}
+
+	private final class PreparedSerial implements Prepared {
+		private final RowState preparedRow;
+		private final long evaluationId;
+		private final LmdbAdjacencyRootDomainCursor.Receipt receipt;
+		private final AdmissionPolicy policy;
+		private final NativeAggregatePhysicalPlan.Work work;
+		private final LmdbNativeWork estimate;
+
+		PreparedSerial(RowState row, SerialAdmission admission) {
+			preparedRow = row;
+			evaluationId = row.cancellation.evaluationId();
+			receipt = admission.receipt();
+			policy = admission.policy();
+			work = serialWork(receipt);
+			double levels = binaryLevels(receipt.roots());
+			double heapLevels = binaryLevels(receipt.predicates());
+			double storage = resident(receipt) ? 0D
+					: 4D * (1D + levels)
+							+ 12D * levels * (2D + 2D * levels);
+			double operations = 4D * receipt.predicates() + 5D * receipt.pages()
+					+ receipt.roots() * (10D + 2D * heapLevels + storage);
+			estimate = LmdbNativeWork.between(0D, operations);
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork() {
+			return estimate;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Retention retention() {
+			return resident(receipt) ? NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE
+					: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+			return row == preparedRow && row.source == source && row.cancellation.evaluationId() == evaluationId
+					&& row.base.isEmpty() && row.boundMask() == 0L ? work : null;
+		}
+
+		@Override
+		public boolean blocksBeforeOutput() {
+			return true;
+		}
+
+		@Override
+		public boolean retentionWorkIncluded() {
+			return true;
+		}
+
+		@Override
+		public String properties() {
+			return "RUN_COUNT[producer=SOC_ROOT_DOMAIN_MERGE,storage=BOUNDED_COUNTS]";
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+			owner.check();
+			if (!bindings.isEmpty() || owner.evaluationId() != evaluationId || quote(preparedRow) == null
+					|| !policy.current()) {
+				return NativeAggregateAlternative.decline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, "serial root-count receipt changed");
+			}
+			RootCountWorkspace currentWorkspace = source.rootCountWorkspace(true);
+			if (currentWorkspace == null || currentWorkspace.fixedBytes() > receipt.providerFixedBytes()
+					|| currentWorkspace.planeBytes() > receipt.providerBytesPerPlane()) {
+				return NativeAggregateAlternative.decline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, "root-count workspace proof changed");
+			}
+			return LmdbNativeRunCountHistogram.this.evaluate(bindings, owner, true, receipt, preparedRow);
+		}
+	}
+
+	private final class PreparedParallel implements Prepared {
+		private final RowState preparedRow;
+		private final long evaluationId;
+		private final ParallelRootCountReceipt receipt;
+		private final AdmissionPolicy policy;
+		private final long countStoreBytes;
+		private final NativeAggregatePhysicalPlan.Work work;
+
+		PreparedParallel(RowState row, ParallelAdmission admission) {
+			preparedRow = row;
+			evaluationId = row.cancellation.evaluationId();
+			receipt = admission.receipt();
+			policy = admission.policy();
+			countStoreBytes = admission.countStoreBytes();
+			work = parallelWork(receipt, policy.threads(), countStoreBytes);
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork() {
+			return LmdbNativeWork.UNKNOWN;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Retention retention() {
+			return receipt.roots() <= NativeCountGroupStore.INITIAL_ARENA_RECORDS
+					? NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE
+					: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+			return row == preparedRow && row.source == source && row.cancellation.evaluationId() == evaluationId
+					&& row.base.isEmpty() && row.boundMask() == 0L ? work : null;
+		}
+
+		@Override
+		public boolean blocksBeforeOutput() {
+			return true;
+		}
+
+		@Override
+		public boolean retentionWorkIncluded() {
+			return true;
+		}
+
+		@Override
+		public String properties() {
+			return "RUN_COUNT[producer=SOC_PARALLEL_ROOT_MORSELS,storage=BOUNDED_COUNTS]";
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+			owner.check();
+			if (!bindings.isEmpty() || owner.evaluationId() != evaluationId || quote(preparedRow) == null
+					|| !policy.current() || NativeCountGroupStore.configuredMaxBytes() != countStoreBytes) {
+				return NativeAggregateAlternative.decline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, "parallel root-count receipt changed");
+			}
+			return evaluateParallel(bindings, owner, receipt, preparedRow, policy, countStoreBytes);
+		}
+	}
+
+	private static long rootValueSpan(ParallelRootCountReceipt receipt) {
+		return ValueIds.getValue(receipt.lastRoot()) - ValueIds.getValue(receipt.firstRoot()) + 1L;
+	}
+
+	private static int parallelRangeCount(ParallelRootCountReceipt receipt, int workers) {
+		long valueSpan = rootValueSpan(receipt);
+		long rawSpan = receipt.lastRoot() - receipt.firstRoot() + 1L;
+		long available = valueSpan > 1L ? valueSpan : rawSpan;
+		return (int) Math.min(available, Math.min(Integer.MAX_VALUE - 1L,
+				(long) workers * ADJACENCY_RANGES_PER_WORKER));
+	}
+
+	/** Source graphs, independent worker wrappers and bounded split/queue arrays are reserved before acquisition. */
+	private static long parallelWorkspaceBytes(ParallelRootCountReceipt receipt, int workers, int ranges) {
+		try {
+			long planeBytes = Math.multiplyExact(receipt.workspace().planeBytes(), receipt.predicates());
+			long probeBytes = Math.addExact(receipt.workspace().fixedBytes(), planeBytes);
+			long workerBytes = Math.multiplyExact(workers, Math.addExact(256L, Math.multiplyExact(2L, probeBytes)));
+			long shared = Math.addExact(1024L, Math.multiplyExact(512L, workers));
+			shared = Math.addExact(shared, Math.multiplyExact(128L, ranges));
+			shared = Math.addExact(shared, Math.addExact(16L, Math.multiplyExact(8L, receipt.predicates())));
+			return Math.addExact(workerBytes, shared);
+		} catch (ArithmeticException overflow) {
+			return -1L;
+		}
+	}
+
+	/** Fences tile the unsigned root order; mixed ID types remain legal and fall back from dense scanning. */
+	private static long[][] parallelSplits(ParallelRootCountReceipt receipt, int workers) {
+		int ranges = parallelRangeCount(receipt, workers);
+		if (ranges < 2) {
+			return null;
+		}
+		long valueSpan = rootValueSpan(receipt);
+		boolean useValues = valueSpan > 1L;
+		long first = useValues ? ValueIds.getValue(receipt.firstRoot()) : receipt.firstRoot();
+		long span = useValues ? valueSpan : receipt.lastRoot() - receipt.firstRoot() + 1L;
+		long quotient = span / ranges;
+		long remainder = span % ranges;
+		int type = ValueIds.getIdType(receipt.firstRoot());
+		long[][] splits = new long[ranges - 1][];
+		for (int index = 1; index < ranges; index++) {
+			long offset = quotient * index + remainder * index / ranges;
+			long boundary = first + offset;
+			splits[index - 1] = new long[] { useValues ? ValueIds.createId(type, boundary) : boundary };
+		}
+		return splits;
+	}
+
+	/** Prices both dense attempts and full unsigned fallback, including all three unary-store levels. */
+	private static NativeAggregatePhysicalPlan.Work parallelWork(ParallelRootCountReceipt receipt, int workers,
+			long countStoreBytes) {
+		long ranges = parallelRangeCount(receipt, workers);
+		double roots = receipt.roots();
+		double predicates = receipt.predicates();
+		double segments = receipt.predicateSegments();
+		double pages = receipt.pages();
+		double valueSpan = rootValueSpan(receipt);
+		double rootHigh = upperCount(receipt.roots());
+		double predicateHigh = upperCount(receipt.predicates());
+		double segmentHigh = upperCount(receipt.predicateSegments());
+		double pageHigh = upperCount(receipt.pages());
+		double rangeHigh = upperCount(ranges);
+		double workerHigh = upperCount(workers);
+		double valueSpanHigh = upperCount(rootValueSpan(receipt));
+		double rootLevels = binaryLevels(receipt.largestRootDomain());
+		double pageLevels = binaryLevels(receipt.pages());
+		double predicateLevels = binaryLevels(receipt.predicates());
+		double groupLevels = binaryLevels(receipt.roots());
+
+		// Receipt revalidation and each dense/fallback probe bind predicates through the retained segmented catalog.
+		// The same receipt also reads two plane statistics per predicate, and each worker/range visits its catalog.
+		double catalog = (1D + workers + ranges) * predicates * segments * (1D + predicateLevels)
+				+ 2D * predicates * (1D + predicateLevels) + (workers + ranges) * predicates;
+		double catalogHigh = upperMultiply(upperMultiply(upperMultiply(
+				upperAdd(1D, upperAdd(workerHigh, rangeHigh)), predicateHigh), segmentHigh),
+				upperAdd(1D, predicateLevels));
+		catalogHigh = upperAdd(catalogHigh,
+				upperAdd(upperMultiply(upperMultiply(2D, predicateHigh), upperAdd(1D, predicateLevels)),
+						upperMultiply(upperAdd(workerHigh, rangeHigh), predicateHigh)));
+		// Each of up to two attempts per range seeks both fences in each plane. A keyAt search can walk every
+		// continuation shard/page as well as both binary directories before decoding its bounded page coordinate.
+		// Its expected value deliberately uses this conservative continuation bound, not an observed seek count.
+		// The third directory search covers direct positioning of each nonempty ordinal-window cursor.
+		double seek = 6D * ranges * predicates * (1D + rootLevels) * (1D + 2D * pageLevels + 2D * pages);
+		double seekHigh = upperMultiply(upperMultiply(upperMultiply(upperMultiply(
+				upperMultiply(6D, rangeHigh), predicateHigh), upperAdd(1D, rootLevels)),
+				upperAdd(upperAdd(1D, upperMultiply(2D, pageLevels)), upperMultiply(2D, pageHigh))), 1D);
+		// Each lower-bound midpoint decodes one root coordinate in addition to streamed root batches.
+		double midpointRows = 4D * ranges * predicates * (1D + rootLevels);
+		double midpointRowsHigh = upperMultiply(upperMultiply(upperMultiply(4D, rangeHigh), predicateHigh),
+				upperAdd(1D, rootLevels));
+		// Each dense attempt may be discarded and reread by the merge. Three page/header operations per page
+		// cover normal binds, continuation binds and continuation-header peeks in each attempted range.
+		double scanned = 2D * predicates + pages + catalog + seek + 6D * ranges * pages + 2D * roots;
+		double scannedHigh = upperAdd(upperAdd(upperAdd(upperAdd(upperMultiply(2D, predicateHigh), pageHigh),
+				catalogHigh), seekHigh), upperAdd(upperMultiply(upperMultiply(6D, rangeHigh), pageHigh),
+						upperMultiply(2D, rootHigh)));
+		boolean resident = receipt.roots() <= NativeCountGroupStore.INITIAL_ARENA_RECORDS;
+		boolean nominalResident = NativeCountGroupStore.nominalUnaryGroupsFit(receipt.roots(), countStoreBytes);
+		double storeScan = resident || nominalResident ? 3D * roots : 12D * roots * (1D + groupLevels);
+		double storeScanHigh = resident ? upperMultiply(3D, rootHigh)
+				: upperMultiply(upperMultiply(12D, rootHigh), upperAdd(1D, groupLevels));
+		scanned += storeScan;
+		scannedHigh = upperAdd(scannedHigh, storeScanHigh);
+		double sort = resident || nominalResident ? 0D : 6D * roots * groupLevels;
+		double sortHigh = resident ? 0D
+				: upperMultiply(18D,
+						upperMultiply(upperMultiply(upperMultiply(2D, rootHigh), groupLevels),
+								upperAdd(2D, upperMultiply(2D, groupLevels))));
+		double heap = 4D * roots * (1D + predicateLevels) + 2D * ranges * predicates * (1D + predicateLevels)
+				+ 4D * ranges + 4D * workers + (double) workers * workers;
+		double heapHigh = upperAdd(upperMultiply(upperMultiply(4D, rootHigh), upperAdd(1D, predicateLevels)),
+				upperMultiply(upperMultiply(upperMultiply(2D, rangeHigh), predicateHigh),
+						upperAdd(1D, predicateLevels)));
+		heapHigh = upperAdd(heapHigh, upperAdd(upperAdd(upperMultiply(4D, rangeHigh),
+				upperMultiply(4D, workerHigh)), upperMultiply(workerHigh, workerHigh)));
+		// Each boundary chunk contains a physical root; each interior stripe range contributes at most one chunk.
+		// Both fill and output scan the dense array. Peeking and collecting each boundary chunk inspect every plane;
+		// stripe chunks also inspect every plane even when their windows are empty.
+		double denseCells = Math.min(valueSpan, (roots + ranges) * DENSE_ROOT_CAPACITY);
+		double denseCellsHigh = Math.min(valueSpanHigh,
+				upperMultiply(upperAdd(rootHigh, rangeHigh), DENSE_ROOT_CAPACITY));
+		double windowLoops = 2D * predicates * (roots + 2D) + ranges * predicates;
+		double windowLoopsHigh = upperAdd(upperMultiply(upperMultiply(2D, predicateHigh), upperAdd(rootHigh, 2D)),
+				upperMultiply(rangeHigh, predicateHigh));
+		LmdbNativeCostVector extra = LmdbNativeCostVector.builder()
+				.add(Feature.WORKER_START, 2D, workers, workerHigh)
+				.add(Feature.INDEX_SEEK, 0D, (1D + workers + 7D * ranges) * predicates,
+						upperMultiply(upperAdd(1D, upperAdd(workerHigh, upperMultiply(7D, rangeHigh))), predicateHigh))
+				.add(Feature.SCANNED_ROW, 0D, scanned, scannedHigh)
+				.add(Feature.DECODED_ROW, 0D, 2D * roots + midpointRows,
+						upperAdd(upperMultiply(2D, rootHigh), midpointRowsHigh))
+				// Dense attempts also compare, classify and add each visited root to the primitive degree array.
+				.add(Feature.INTERPRETED_ROW, 0D, catalog + seek + heap + windowLoops + roots + 2D * denseCells,
+						upperAdd(upperAdd(catalogHigh, seekHigh),
+								upperAdd(heapHigh, upperAdd(windowLoopsHigh,
+										upperAdd(rootHigh, upperMultiply(2D, denseCellsHigh))))))
+				.add(Feature.GROUP_UPDATE, 0D, 2D * roots, upperMultiply(2D, rootHigh))
+				.add(Feature.SORT_N_LOG2_N, 0D, sort, sortHigh)
+				.add(Feature.OUTPUT_MATERIALIZATION, 0D, roots, rootHigh)
+				.build();
+		NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(roots, 0D, 0D, 0D, 0D,
+				0D, rootHigh, LmdbNativeCostVector.zero());
+		return new NativeAggregatePhysicalPlan.Work(input, extra, rootHigh);
+	}
+
+	/** Prices both root merge and the unary count store's two external sort/readback pipelines. */
+	private static NativeAggregatePhysicalPlan.Work serialWork(LmdbAdjacencyRootDomainCursor.Receipt receipt) {
+		double roots = receipt.roots();
+		double maxRoots = upperCount(receipt.roots());
+		double predicates = receipt.predicates();
+		double pages = receipt.pages();
+		double maxPredicates = upperCount(receipt.predicates());
+		double maxPages = upperCount(receipt.pages());
+		double levels = binaryLevels(receipt.roots());
+		double heapLevels = binaryLevels(receipt.predicates());
+		// Two page-count directory traversals and up to three page/continuation-header visits per page.
+		double scanned = 2D * predicates + 5D * pages + roots;
+		double maxScanned = upperAdd(upperAdd(upperMultiply(2D, maxPredicates), upperMultiply(5D, maxPages)),
+				maxRoots);
+		if (resident(receipt)) {
+			// Resident finish walks one marker record per output group; there can be at most R groups.
+			scanned += roots;
+			maxScanned = upperAdd(maxScanned, maxRoots);
+		}
+		// Each large pipeline writes, compacts and reads at most R records. The second restores encounter order.
+		// At most R unary groups can occur; the initial arena either admits them all or refuses without spilling.
+		double spill = resident(receipt) ? 0D
+				: upperMultiply(upperMultiply(4D, maxRoots), upperAdd(1D, levels));
+		maxScanned = upperAdd(maxScanned, spill);
+		double sort = resident(receipt) ? 0D : 2D * roots * levels;
+		double maxSort = resident(receipt) ? 0D
+				: upperMultiply(6D, upperMultiply(upperMultiply(upperMultiply(2D, maxRoots), levels),
+						upperAdd(2D, upperMultiply(2D, levels))));
+		// INTERPRETED_ROW models comparator invocations; each handles the root and, on ties, predicate ordering.
+		double heap = (2D * roots + predicates) * (1D + heapLevels);
+		double maxHeap = upperMultiply(upperAdd(upperMultiply(2D, maxRoots), maxPredicates),
+				upperAdd(1D, heapLevels));
+		LmdbNativeCostVector extra = LmdbNativeCostVector.builder()
+				.add(Feature.INDEX_SEEK, 0D, predicates, maxPredicates)
+				.add(Feature.SCANNED_ROW, 0D, scanned, maxScanned)
+				.add(Feature.DECODED_ROW, 0D, roots, maxRoots)
+				.add(Feature.INTERPRETED_ROW, 0D, heap, maxHeap)
+				.add(Feature.SORT_N_LOG2_N, 0D, sort, maxSort)
+				.add(Feature.OUTPUT_MATERIALIZATION, 0D, roots, maxRoots)
+				.build();
+		NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(roots, 0D, 0D, 0D, 0D,
+				0D, maxRoots, LmdbNativeCostVector.zero());
+		return new NativeAggregatePhysicalPlan.Work(input, extra, maxRoots);
+	}
+
+	private static boolean resident(LmdbAdjacencyRootDomainCursor.Receipt receipt) {
+		return receipt.roots() <= NativeCountGroupStore.INITIAL_ARENA_RECORDS;
+	}
+
+	private static double binaryLevels(long value) {
+		return value <= 1L ? 0D : Long.SIZE - Long.numberOfLeadingZeros(value - 1L);
+	}
+
+	private static double upperCount(long count) {
+		return count == 0L ? 0D : Math.nextUp((double) count);
+	}
+
+	private static double upperAdd(double left, double right) {
+		return left == 0D ? right : right == 0D ? left : Math.nextUp(left + right);
+	}
+
+	private static double upperMultiply(double left, double right) {
+		return left == 0D || right == 0D ? 0D : Math.nextUp(left * right);
 	}
 
 	@Override
@@ -138,6 +687,11 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 	}
 
 	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner, boolean exact) {
+		return evaluate(bindings, owner, exact, null, null);
+	}
+
+	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner, boolean exact,
+			LmdbAdjacencyRootDomainCursor.Receipt receipt, RowState preparedRow) {
 		NativeCancellationToken cancellation = new NativeCancellationToken(owner);
 		cancellation.check();
 		if (!bindings.isEmpty()) {
@@ -147,7 +701,8 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 					: NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation)) {
-			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation, exact);
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation, exact, receipt,
+					preparedRow);
 			cancellation.check();
 			scan.complete();
 			return result;
@@ -155,17 +710,54 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 	}
 
 	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
-			NativeCancellationToken cancellation, boolean exact) {
+			NativeCancellationToken cancellation, boolean exact, LmdbAdjacencyRootDomainCursor.Receipt receipt,
+			RowState preparedRow) {
 		LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
 				LmdbAdjacencyOptimizationTelemetry.Grain.ROOT,
 				LmdbAdjacencyOptimizationTelemetry.Direction.SOC);
 		if (telemetry != null) {
 			telemetry.trackPayloadDecodes();
 		}
-		LongHistogram histogram = tryParallelHistogram(telemetry, cancellation);
-		if (histogram == null) {
-			histogram = sequentialHistogram(telemetry, cancellation);
+		LongHistogram histogram;
+		if (receipt != null) {
+			histogram = adjacencyHistogram(source, false, 0L, false, 0L, telemetry, cancellation, receipt,
+					preparedRow);
+		} else {
+			histogram = tryParallelHistogram(telemetry, cancellation);
+			if (histogram == null) {
+				histogram = sequentialHistogram(telemetry, cancellation);
+			}
 		}
+		return finishHistogram(histogram, telemetry, cancellation, bindings, exact);
+	}
+
+	private CloseableIteration<BindingSet> evaluateParallel(BindingSet bindings, NativeCancellationToken owner,
+			ParallelRootCountReceipt receipt, RowState preparedRow, AdmissionPolicy policy, long countStoreBytes) {
+		NativeCancellationToken cancellation = new NativeCancellationToken(owner);
+		cancellation.check();
+		CloseableIteration<BindingSet> result = null;
+		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation)) {
+			LmdbAdjacencyOptimizationTelemetry telemetry = LmdbAdjacencyOptimizationTelemetry.create(originalExpr,
+					LmdbAdjacencyOptimizationTelemetry.Grain.ROOT,
+					LmdbAdjacencyOptimizationTelemetry.Direction.SOC);
+			if (telemetry != null) {
+				telemetry.trackPayloadDecodes();
+			}
+			LongHistogram histogram = tryCertifiedParallelHistogram(receipt, preparedRow, policy, countStoreBytes,
+					telemetry, cancellation);
+			result = finishHistogram(histogram, telemetry, cancellation, bindings, true);
+			cancellation.check();
+			scan.complete();
+			return result;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(result, failure), failure);
+			throw failure;
+		}
+	}
+
+	private CloseableIteration<BindingSet> finishHistogram(LongHistogram histogram,
+			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation, BindingSet bindings,
+			boolean exact) {
 		if (histogram == null) {
 			return exact ? NativeAggregateAlternative.decline(originalExpr,
 					LmdbNativeAttemptMetrics.PATH_RUN_COUNT_HISTOGRAM, "native run-count histogram sources unavailable")
@@ -227,18 +819,35 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 	private LongHistogram adjacencyHistogram(NativeLmdbQuerySource cursorSource, boolean hasLowerBound,
 			long lowerBound, boolean hasUpperBound, long upperBound,
 			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation) {
+		return adjacencyHistogram(cursorSource, hasLowerBound, lowerBound, hasUpperBound, upperBound, telemetry,
+				cancellation, null, null);
+	}
+
+	private LongHistogram adjacencyHistogram(NativeLmdbQuerySource cursorSource, boolean hasLowerBound,
+			long lowerBound, boolean hasUpperBound, long upperBound,
+			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation,
+			LmdbAdjacencyRootDomainCursor.Receipt receipt, RowState preparedRow) {
 		LongHistogram histogram = null;
-		try (NativeStructuralCounts.RootWorkspace workspace = NativeStructuralCounts.rootWorkspace(cursorSource,
-				cancellation)) {
+		try (NativeStructuralCounts.RootWorkspace workspace = receipt == null
+				? NativeStructuralCounts.rootWorkspace(cursorSource, cancellation)
+				: NativeStructuralCounts.rootWorkspace(preparedRow, receipt.predicates())) {
 			if (workspace == null) {
 				return null;
 			}
-			try (LmdbAdjacencyRootDomainCursor cursor = LmdbAdjacencyRootDomainCursor.open(cursorSource, true,
-					hasLowerBound, lowerBound, hasUpperBound, upperBound, cancellation)) {
+			if (receipt != null) {
+				workspace.reserveProviderBytes(receipt.providerFixedBytes()
+						+ receipt.providerBytesPerPlane() * (receipt.predicates() + 1L));
+			}
+			try (LmdbAdjacencyRootDomainCursor cursor = receipt == null
+					? LmdbAdjacencyRootDomainCursor.open(cursorSource, true, hasLowerBound, lowerBound, hasUpperBound,
+							upperBound, cancellation)
+					: LmdbAdjacencyRootDomainCursor.openCertified(cursorSource, true, receipt, cancellation)) {
 				if (cursor == null) {
 					return null;
 				}
-				histogram = new LongHistogram(cursorSource, cancellation);
+				histogram = receipt == null ? new LongHistogram(cursorSource, cancellation)
+						: new LongHistogram(cursorSource, cancellation,
+								preparedRow.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
 				long roots = collect(cursor, histogram);
 				if (telemetry != null) {
 					telemetry.source("SOC_ROOT_DOMAIN_MERGE");
@@ -284,6 +893,270 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 		}
 		histogram.cancellation.check();
 		return roots;
+	}
+
+	/** Executes only the source-bound retained-view recipe covered by the prepared quote. */
+	private LongHistogram tryCertifiedParallelHistogram(ParallelRootCountReceipt receipt, RowState preparedRow,
+			AdmissionPolicy policy, long countStoreBytes, LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation) {
+		LmdbAdjacencyRootDomainCursor.checkPhysicalCancellation(cancellation);
+		LmdbNativeParallelPipelines.TaskReservation grant = LmdbNativeParallelPipelines.tryReserveTasks(false,
+				policy.threads());
+		if (grant == null) {
+			return null;
+		}
+		KernelRuntime.AggregateMemory workspace = null;
+		ParallelHistogram completed = null;
+		Throwable primary = null;
+		try {
+			int workers = grant.grantedWorkers();
+			if (workers < 2) {
+				return null;
+			}
+			int ranges = parallelRangeCount(receipt, workers);
+			long workspaceBytes = parallelWorkspaceBytes(receipt, workers, ranges);
+			if (ranges < 2 || workspaceBytes < 0L) {
+				return null;
+			}
+			QueryLedger ledger = preparedRow.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			workspace = KernelRuntime.AggregateMemory.forLedger(ledger);
+			if (!workspace.tryReserve(workspaceBytes)) {
+				return null;
+			}
+			completed = runCertifiedParallelHistogram(receipt, workers, countStoreBytes, ledger, cancellation);
+		} catch (LmdbNativeKernelPartitions.ParallelKernelDecline refusal) {
+			Throwable realFailure = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(refusal);
+			if (realFailure != null) {
+				primary = realFailure;
+				NativeStructuralWorkers.rethrow(realFailure);
+			}
+			primary = refusal;
+		} catch (IOException failure) {
+			QueryEvaluationException wrapped = new QueryEvaluationException(failure);
+			primary = wrapped;
+			throw wrapped;
+		} catch (RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			Throwable retained = KernelRuntime.closeResource(workspace, primary);
+			retained = KernelRuntime.closeResource(grant, retained);
+			if (primary == null && retained != null) {
+				retained = KernelRuntime.closeResource(completed == null ? null : completed.histogram, retained);
+			}
+			if (primary instanceof LmdbNativeKernelPartitions.ParallelKernelDecline) {
+				Throwable realFailure = LmdbNativeParallelKernelAggregate.realFailureInControlGraph(retained);
+				if (realFailure != null) {
+					NativeStructuralWorkers.rethrow(realFailure);
+				}
+			}
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, primary);
+		}
+		if (completed == null) {
+			return null;
+		}
+		try {
+			if (telemetry != null) {
+				telemetry.source("SOC_PARALLEL_ROOT_MORSELS");
+				telemetry.rootsVisited(completed.roots);
+				telemetry.rootMetadataReads(completed.roots);
+				telemetry.morsels(Math.addExact(completed.denseRanges, completed.fallbackRanges));
+				telemetry.setKernel(completed.denseRanges > 0L ? "DENSE_MASK+UNSIGNED_MERGE" : "UNSIGNED_MERGE");
+			}
+			ADJACENCY_ROOTS.addAndGet(completed.roots);
+			ADJACENCY_ROOT_MERGES.incrementAndGet();
+			PARALLEL_ADJACENCY_MERGES.incrementAndGet();
+			DENSE_ROOT_MORSELS.addAndGet(completed.denseRanges);
+			ROOT_MERGE_FALLBACK_RANGES.addAndGet(completed.fallbackRanges);
+			PARALLEL_RUNS.incrementAndGet();
+			return completed.histogram;
+		} catch (RuntimeException | Error failure) {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(completed.histogram, failure),
+					failure);
+			throw failure;
+		}
+	}
+
+	private ParallelHistogram runCertifiedParallelHistogram(ParallelRootCountReceipt receipt, int workerCount,
+			long countStoreBytes, QueryLedger ledger, NativeCancellationToken cancellation) throws IOException {
+		NativeCancellationToken workerCancellation = new NativeCancellationToken(cancellation);
+		Runnable physicalCancellation = LmdbAdjacencyRootDomainCursor.physicalCancellation(workerCancellation);
+		RootCountWorker[] workers = source.openParallelRootCountWorkers(receipt, workerCount, physicalCancellation);
+		if (workers == null) {
+			return null;
+		}
+		List<Future<HistogramResult>> futures = null;
+		LongHistogram[] locals = null;
+		LongHistogram merged = null;
+		Throwable workerFailure = null;
+		try {
+			futures = new ArrayList<>(workerCount);
+			locals = new LongHistogram[workerCount];
+			boolean duplicateWorker = false;
+			for (int index = 0; index < workers.length; index++) {
+				if (workers[index] == null) {
+					continue;
+				}
+				for (int previous = 0; previous < index; previous++) {
+					if (workers[previous] == workers[index]) {
+						workers[index] = null;
+						duplicateWorker = true;
+						break;
+					}
+				}
+			}
+			if (workers.length != workerCount || duplicateWorker) {
+				return null;
+			}
+			long[] predicates = new long[receipt.predicates()];
+			for (int workerIndex = 0; workerIndex < workerCount; workerIndex++) {
+				RootCountWorker worker = workers[workerIndex];
+				if (worker == null || worker.viewAuthority() != receipt.viewAuthority()
+						|| worker.bySubject() != receipt.bySubject() || worker.explicit() != receipt.explicit()
+						|| worker.predicateCount() != predicates.length) {
+					return null;
+				}
+				for (int index = 0; index < predicates.length; index++) {
+					LmdbAdjacencyRootDomainCursor.checkPhysicalCancellation(cancellation);
+					long predicate = worker.predicateAt(index);
+					if (predicate <= 0L || workerIndex == 0 && index != 0
+							&& Long.compareUnsigned(predicates[index - 1], predicate) >= 0
+							|| workerIndex != 0 && predicates[index] != predicate) {
+						return null;
+					}
+					if (workerIndex == 0) {
+						predicates[index] = predicate;
+					}
+				}
+			}
+			long[][] splits = parallelSplits(receipt, workerCount);
+			if (splits == null) {
+				return null;
+			}
+			int ranges = splits.length + 1;
+			ConcurrentLinkedQueue<RangeWork> queue = new ConcurrentLinkedQueue<>();
+			queue.add(new RangeWork(0, 1, false));
+			for (int first = 1; first < splits.length; first += ADJACENCY_STRIPE_RANGES) {
+				queue.add(new RangeWork(first, Math.min(splits.length, first + ADJACENCY_STRIPE_RANGES), true));
+			}
+			queue.add(new RangeWork(splits.length, ranges, false));
+			merged = new LongHistogram(source, cancellation, ledger, countStoreBytes);
+			var phaseIdentity = NativeExecutionPhaseEvent.captureIdentity(source);
+			LmdbNativeProbeDeadline workerDeadline = LmdbNativeProbeDeadline.currentOrNull();
+			for (int index = 0; index < workerCount; index++) {
+				RootCountWorker worker = workers[index];
+				LongHistogram local = new LongHistogram(source, workerCancellation, ledger, countStoreBytes);
+				locals[index] = local;
+				local.counts.reserveWorkspace(NativeStructuralCounts.rootWorkspaceBytes(predicates.length));
+				var replayContext = NativeExecutionContext.captureWorkerContext();
+				futures.add(LmdbNativeParallelPipelines.pool().submit(() -> {
+					long roots = 0L, denseRanges = 0L, fallbackRanges = 0L;
+					try (var replayScope = replayContext.activate();
+							var deadlineScope = LmdbNativeProbeDeadline.inherit(workerDeadline);
+							NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startDetached("scan",
+									phaseIdentity)) {
+						DenseAdjacencyRangeCollector dense = null;
+						Throwable primary = null;
+						try {
+							dense = DenseAdjacencyRangeCollector.open(worker, receipt, predicates, workerCancellation,
+									local.counts);
+							RangeWork work;
+							while ((work = queue.poll()) != null) {
+								LmdbAdjacencyRootDomainCursor.checkPhysicalCancellation(workerCancellation);
+								long denseRoots = -1L;
+								if (dense != null) {
+									if (work.dense) {
+										denseRoots = dense.collectStripe(splits, work.firstRange, work.endRange, local);
+									} else if (work.firstRange == 0) {
+										denseRoots = dense.collectBoundary(true, splits[0][0], local);
+									} else if (work.firstRange == splits.length) {
+										denseRoots = dense.collectBoundary(false, splits[splits.length - 1][0], local);
+									}
+								}
+								if (denseRoots >= 0L) {
+									roots += denseRoots;
+									denseRanges++;
+								} else {
+									for (int range = work.firstRange; range < work.endRange; range++) {
+										long[] lower = range == 0 ? null : splits[range - 1];
+										long[] upper = range == splits.length ? null : splits[range];
+										roots += collectRetainedAdjacencyRange(worker, receipt, predicates, lower,
+												upper, local);
+										fallbackRanges++;
+									}
+								}
+							}
+						} catch (IOException | RuntimeException | Error failure) {
+							primary = failure;
+							throw failure;
+						} finally {
+							KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(dense, primary),
+									primary);
+						}
+						scan.complete();
+					} catch (IOException | RuntimeException | Error failure) {
+						workerCancellation.requestCancellation();
+						throw failure;
+					}
+					return new HistogramResult(local, roots, denseRanges, fallbackRanges);
+				}));
+			}
+			long roots = 0L, denseRanges = 0L, fallbackRanges = 0L;
+			for (Future<HistogramResult> future : futures) {
+				HistogramResult result = NativeStructuralWorkers.await(future, workerCancellation);
+				roots += result.adjacencyRoots;
+				denseRanges += result.denseRanges;
+				fallbackRanges += result.fallbackRanges;
+				merged.mergeFrom(result.histogram);
+			}
+			return new ParallelHistogram(merged, roots, denseRanges, fallbackRanges);
+		} catch (InterruptedException failure) {
+			Thread.currentThread().interrupt();
+			workerFailure = new QueryEvaluationException(failure);
+			throw (QueryEvaluationException) workerFailure;
+		} catch (ExecutionException failure) {
+			workerFailure = failure.getCause() == null ? failure : failure.getCause();
+			NativeStructuralWorkers.rethrow(workerFailure);
+			throw new AssertionError("unreachable");
+		} catch (RuntimeException | Error failure) {
+			workerFailure = failure;
+			throw failure;
+		} finally {
+			Throwable retained = NativeStructuralWorkers.drain(futures == null ? List.of() : futures, workers,
+					workerCancellation, workerFailure);
+			if (locals != null) {
+				for (LongHistogram local : locals) {
+					retained = KernelRuntime.closeResource(local, retained);
+				}
+			}
+			if (retained != null) {
+				retained = KernelRuntime.closeResource(merged, retained);
+			}
+			if (retained != workerFailure) {
+				NativeStructuralWorkers.rethrow(retained);
+			}
+		}
+	}
+
+	private long collectRetainedAdjacencyRange(RootCountWorker worker, ParallelRootCountReceipt receipt,
+			long[] predicates, long[] lower, long[] upper, LongHistogram histogram) throws IOException {
+		LmdbAdjacencyRootDomainCursor cursor = null;
+		Throwable primary = null;
+		try {
+			cursor = LmdbAdjacencyRootDomainCursor.openWorker(worker, receipt,
+					predicates, lower != null, lower == null ? 0L : lower[0], upper != null,
+					upper == null ? 0L : upper[0],
+					histogram.cancellation);
+			if (cursor == null) {
+				throw new LmdbNativeKernelPartitions.ParallelKernelDecline("retained root-count range unavailable");
+			}
+			return collect(cursor, histogram);
+		} catch (IOException | RuntimeException | Error failure) {
+			primary = failure;
+			throw failure;
+		} finally {
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(KernelRuntime.closeResource(cursor, primary), primary);
+		}
 	}
 
 	/** Parallel partitioned run counting with run-aligned boundaries, or null to fall back to sequential. */
@@ -368,6 +1241,7 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 						}
 					}
 					var phaseIdentity = NativeExecutionPhaseEvent.captureIdentity(source);
+					LmdbNativeProbeDeadline workerDeadline = LmdbNativeProbeDeadline.currentOrNull();
 					for (int w = 0; w < workers; w++) {
 						NativeLmdbQuerySource workerSource = sources[w];
 						LongHistogram local = new LongHistogram(workerSource, workerCancellation);
@@ -383,6 +1257,7 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 							long denseRanges = 0L;
 							long fallbackRanges = 0L;
 							try (var replayScope = replayContext.activate();
+									var deadlineScope = LmdbNativeProbeDeadline.inherit(workerDeadline);
 									NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startDetached(
 											"scan",
 											phaseIdentity)) {
@@ -573,7 +1448,9 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 	 */
 	private static final class DenseAdjacencyRangeCollector implements AutoCloseable {
 		private final NativeCancellationToken cancellation;
-		private final NativeLmdbQuerySource.NativeProbe probe;
+		private final Runnable physicalCancellation;
+		private final RootCountProbe probe;
+		private final ParallelRootCountReceipt receipt;
 		private final NativeLmdbQuerySource.NativeAdjacency[] planes;
 		private final long[] degree = new long[DENSE_ROOT_CAPACITY];
 		private final NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[] cursors;
@@ -582,10 +1459,13 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 		private final int[] windowIndexes;
 		private final int[] windowSizes;
 
-		private DenseAdjacencyRangeCollector(NativeLmdbQuerySource.NativeProbe probe,
-				NativeLmdbQuerySource.NativeAdjacency[] planes, NativeCancellationToken cancellation) {
+		private DenseAdjacencyRangeCollector(RootCountProbe probe,
+				NativeLmdbQuerySource.NativeAdjacency[] planes, NativeCancellationToken cancellation,
+				ParallelRootCountReceipt receipt) {
 			this.cancellation = cancellation;
+			this.physicalCancellation = LmdbAdjacencyRootDomainCursor.physicalCancellation(cancellation);
 			this.probe = probe;
+			this.receipt = receipt;
 			this.planes = planes;
 			cursors = new NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor[planes.length];
 			roots = new long[Math.multiplyExact(planes.length, STRIPE_PLANE_WINDOW_SIZE)];
@@ -605,32 +1485,65 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 			counts.reserveWorkspace(1024L + (long) DENSE_ROOT_CAPACITY * Long.BYTES
 					+ Math.multiplyExact((long) predicates.length,
 							128L + 2L * STRIPE_PLANE_WINDOW_SIZE * Long.BYTES));
-			NativeLmdbQuerySource.NativeProbe probe = source.newProbe(cursorCancellation);
-			NativeLmdbQuerySource.NativeAdjacency[] planes = new NativeLmdbQuerySource.NativeAdjacency[predicates.length];
+			return openProbe(source.newProbe(cursorCancellation), predicates, cancellation, null);
+		}
+
+		static DenseAdjacencyRangeCollector open(RootCountWorker worker, ParallelRootCountReceipt receipt,
+				long[] predicates, NativeCancellationToken cancellation, NativeStructuralCounts counts)
+				throws IOException {
+			LmdbAdjacencyRootDomainCursor.checkPhysicalCancellation(cancellation);
+			if (worker.viewAuthority() != receipt.viewAuthority() || worker.bySubject() != receipt.bySubject()
+					|| worker.explicit() != receipt.explicit() || worker.predicateCount() != predicates.length) {
+				return null;
+			}
+			counts.reserveWorkspace(1024L + (long) DENSE_ROOT_CAPACITY * Long.BYTES
+					+ Math.multiplyExact((long) predicates.length,
+							128L + 2L * STRIPE_PLANE_WINDOW_SIZE * Long.BYTES));
+			return openProbe(worker.newProbe(), predicates, cancellation, receipt);
+		}
+
+		private static DenseAdjacencyRangeCollector openProbe(RootCountProbe probe, long[] predicates,
+				NativeCancellationToken cancellation, ParallelRootCountReceipt receipt) throws IOException {
+			if (probe == null) {
+				return null;
+			}
+			NativeLmdbQuerySource.NativeAdjacency[] planes = null;
 			int opened = 0;
+			boolean transferred = false;
+			Throwable primary = null;
 			try {
+				if (receipt != null && probe.rootCountViewAuthority() != receipt.viewAuthority()) {
+					return null;
+				}
+				planes = new NativeLmdbQuerySource.NativeAdjacency[predicates.length];
 				for (long predicate : predicates) {
 					cancellation.poll(opened);
 					NativeLmdbQuerySource.NativeAdjacency plane = probe.adjacency(predicate, true);
-					if (plane == null || !plane.supportsKeyEnumeration() || !plane.keysImplyNonEmptyRuns()) {
+					if (plane == null || !plane.supportsKeyEnumeration() || !plane.keysImplyNonEmptyRuns()
+							|| receipt != null && !plane.orderedKeyRunsWithBoundedOpen()) {
 						if (plane != null) {
 							plane.close();
 						}
-						closePlanes(planes, opened);
-						probe.close();
 						return null;
 					}
 					planes[opened++] = plane;
 				}
-				return new DenseAdjacencyRangeCollector(probe, planes, cancellation);
+				DenseAdjacencyRangeCollector result = new DenseAdjacencyRangeCollector(probe, planes, cancellation,
+						receipt);
+				transferred = true;
+				return result;
 			} catch (IOException | RuntimeException | Error failure) {
-				closePlanes(planes, opened);
-				try {
-					probe.close();
-				} catch (RuntimeException | Error closeFailure) {
-					failure.addSuppressed(closeFailure);
-				}
+				primary = failure;
 				throw failure;
+			} finally {
+				if (!transferred) {
+					Throwable retained = primary;
+					for (int index = 0; index < opened; index++) {
+						retained = KernelRuntime.closeResource(planes[index], retained);
+					}
+					retained = KernelRuntime.closeResource(probe, retained);
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(retained, primary);
+				}
 			}
 		}
 
@@ -638,11 +1551,11 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 			long lowerRoot;
 			long upperRoot;
 			if (first) {
-				lowerRoot = extremeRoot(true);
+				lowerRoot = receipt == null ? extremeRoot(true) : receipt.firstRoot();
 				upperRoot = splitRoot;
 			} else {
 				lowerRoot = splitRoot;
-				long maximumRoot = extremeRoot(false);
+				long maximumRoot = receipt == null ? extremeRoot(false) : receipt.lastRoot();
 				long maximumValue = ValueIds.getValue(maximumRoot);
 				if (maximumValue == (1L << 56) - 1L) {
 					return -1L;
@@ -664,22 +1577,48 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 			Arrays.fill(windowIndexes, 0);
 			Arrays.fill(windowSizes, 0);
 			int opened = 0;
+			Throwable primary = null;
 			try {
 				for (int planeIndex = 0; planeIndex < planes.length; planeIndex++) {
 					NativeLmdbQuerySource.NativeAdjacency plane = planes[planeIndex];
-					long from = plane.lowerBoundKeyOrdinal(lowerRoot);
-					long to = plane.lowerBoundKeyOrdinal(upperRoot);
-					NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = plane.openKeyRunCursor(from, to);
+					long from = receipt == null ? plane.lowerBoundKeyOrdinal(lowerRoot)
+							: plane.lowerBoundKeyOrdinal(lowerRoot, physicalCancellation);
+					long to = receipt == null ? plane.lowerBoundKeyOrdinal(upperRoot)
+							: plane.lowerBoundKeyOrdinal(upperRoot, physicalCancellation);
+					if (from < 0L || to < from || to > plane.keyCount()) {
+						return -1L;
+					}
+					NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = receipt == null
+							? plane.openKeyRunCursor(from, to)
+							: plane.openKeyRunCursor(from, to, physicalCancellation);
 					if (cursor == null) {
 						return -1L;
 					}
 					cursors[opened++] = cursor;
+					cursor.cancellationPoll(physicalCancellation);
 				}
-				try (LongHistogram boundaryHistogram = new LongHistogram(histogram.source, histogram.cancellation)) {
+				LongHistogram boundaryHistogram = null;
+				Throwable histogramFailure = null;
+				try {
+					boundaryHistogram = new LongHistogram(histogram.source, histogram.cancellation,
+							receipt == null ? null : histogram.counts.ledger(), histogram.countStoreBytes);
 					long rootCount = 0L;
 					long fromValue = lowerValue;
 					while (fromValue < upperValue) {
 						histogram.cancellation.check();
+						long nextRoot = nextOpenRoot();
+						if (nextRoot == -1L) {
+							break;
+						}
+						if (ValueIds.getIdType(nextRoot) != idType || Long.compareUnsigned(nextRoot, lowerRoot) < 0
+								|| Long.compareUnsigned(nextRoot, upperRoot) >= 0) {
+							return -1L;
+						}
+						long nextValue = ValueIds.getValue(nextRoot);
+						if (nextValue < fromValue || nextValue >= upperValue) {
+							return -1L;
+						}
+						fromValue = nextValue;
 						long toValue = Math.min(upperValue, fromValue + degree.length);
 						long rangeLower = ValueIds.createId(idType, fromValue);
 						long rangeUpper = ValueIds.createId(idType, toValue);
@@ -692,9 +1631,18 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 					}
 					histogram.mergeFrom(boundaryHistogram);
 					return rootCount;
+				} catch (RuntimeException | Error failure) {
+					histogramFailure = failure;
+					throw failure;
+				} finally {
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(
+							KernelRuntime.closeResource(boundaryHistogram, histogramFailure), histogramFailure);
 				}
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				throw failure;
 			} finally {
-				closeCursors(opened);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(closeCursors(opened, primary), primary);
 			}
 		}
 
@@ -736,18 +1684,31 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 			Arrays.fill(windowIndexes, 0);
 			Arrays.fill(windowSizes, 0);
 			int opened = 0;
+			Throwable primary = null;
 			try {
 				for (int planeIndex = 0; planeIndex < planes.length; planeIndex++) {
 					NativeLmdbQuerySource.NativeAdjacency plane = planes[planeIndex];
-					long from = plane.lowerBoundKeyOrdinal(stripeLowerRoot);
-					long to = plane.lowerBoundKeyOrdinal(stripeUpperRoot);
-					NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = plane.openKeyRunCursor(from, to);
+					long from = receipt == null ? plane.lowerBoundKeyOrdinal(stripeLowerRoot)
+							: plane.lowerBoundKeyOrdinal(stripeLowerRoot, physicalCancellation);
+					long to = receipt == null ? plane.lowerBoundKeyOrdinal(stripeUpperRoot)
+							: plane.lowerBoundKeyOrdinal(stripeUpperRoot, physicalCancellation);
+					if (from < 0L || to < from || to > plane.keyCount()) {
+						return -1L;
+					}
+					NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = receipt == null
+							? plane.openKeyRunCursor(from, to)
+							: plane.openKeyRunCursor(from, to, physicalCancellation);
 					if (cursor == null) {
 						return -1L;
 					}
 					cursors[opened++] = cursor;
+					cursor.cancellationPoll(physicalCancellation);
 				}
-				try (LongHistogram stripeHistogram = new LongHistogram(histogram.source, histogram.cancellation)) {
+				LongHistogram stripeHistogram = null;
+				Throwable histogramFailure = null;
+				try {
+					stripeHistogram = new LongHistogram(histogram.source, histogram.cancellation,
+							receipt == null ? null : histogram.counts.ledger(), histogram.countStoreBytes);
 					long rootCount = 0L;
 					for (int range = firstRange; range < endRange; range++) {
 						histogram.cancellation.poll(range - firstRange);
@@ -759,9 +1720,18 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 					}
 					histogram.mergeFrom(stripeHistogram);
 					return rootCount;
+				} catch (RuntimeException | Error failure) {
+					histogramFailure = failure;
+					throw failure;
+				} finally {
+					KernelRuntime.rethrowCloseFailureIfNotPrimary(
+							KernelRuntime.closeResource(stripeHistogram, histogramFailure), histogramFailure);
 				}
+			} catch (RuntimeException | Error failure) {
+				primary = failure;
+				throw failure;
 			} finally {
-				closeCursors(opened);
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(closeCursors(opened, primary), primary);
 			}
 		}
 
@@ -775,13 +1745,8 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 				int base = planeIndex * STRIPE_PLANE_WINDOW_SIZE;
 				while (true) {
 					histogram.cancellation.poll(windowIndexes[planeIndex]);
-					if (windowIndexes[planeIndex] == windowSizes[planeIndex]) {
-						windowSizes[planeIndex] = cursors[planeIndex].fillRootCounts(roots, base, multiplicities,
-								base, STRIPE_PLANE_WINDOW_SIZE);
-						windowIndexes[planeIndex] = 0;
-						if (windowSizes[planeIndex] == 0) {
-							break;
-						}
+					if (!hasOpenRoot(planeIndex)) {
+						break;
 					}
 					int slot = base + windowIndexes[planeIndex];
 					long root = roots[slot];
@@ -811,61 +1776,59 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 			return rootCount;
 		}
 
-		private void closeCursors(int count) {
-			Throwable failure = null;
-			for (int i = 0; i < count; i++) {
-				try {
-					cursors[i].close();
-				} catch (RuntimeException | Error problem) {
-					if (failure == null) {
-						failure = problem;
-					} else if (failure != problem) {
-						failure.addSuppressed(problem);
+		/** Peek at the least buffered physical root without advancing or decoding empty numeric ID windows. */
+		private long nextOpenRoot() {
+			long next = -1L;
+			for (int planeIndex = 0; planeIndex < planes.length; planeIndex++) {
+				cancellation.poll(planeIndex);
+				LmdbNativeProbeDeadline.poll(planeIndex);
+				if (hasOpenRoot(planeIndex)) {
+					long candidate = roots[planeIndex * STRIPE_PLANE_WINDOW_SIZE + windowIndexes[planeIndex]];
+					if (next == -1L || Long.compareUnsigned(candidate, next) < 0) {
+						next = candidate;
 					}
-				} finally {
-					cursors[i] = null;
 				}
 			}
-			if (failure instanceof Error) {
-				throw (Error) failure;
+			return next;
+		}
+
+		private boolean hasOpenRoot(int planeIndex) {
+			int size = windowSizes[planeIndex];
+			if (size < 0) {
+				return false;
 			}
-			if (failure != null) {
-				throw (RuntimeException) failure;
+			if (windowIndexes[planeIndex] == size) {
+				int base = planeIndex * STRIPE_PLANE_WINDOW_SIZE;
+				size = cursors[planeIndex].fillRootCounts(roots, base, multiplicities, base,
+						STRIPE_PLANE_WINDOW_SIZE);
+				windowIndexes[planeIndex] = 0;
+				// The existing per-plane size array also records exhaustion; no extra retained array is needed.
+				windowSizes[planeIndex] = size == 0 ? -1 : size;
+				return size > 0;
 			}
+			return true;
+		}
+
+		private Throwable closeCursors(int count, Throwable failure) {
+			for (int i = 0; i < count; i++) {
+				failure = KernelRuntime.closeResource(cursors[i], failure);
+				cursors[i] = null;
+			}
+			return failure;
 		}
 
 		@Override
 		public void close() {
 			Throwable failure = null;
-			try {
-				closePlanes(planes, planes.length);
-			} catch (RuntimeException | Error problem) {
-				failure = problem;
+			for (NativeLmdbQuerySource.NativeAdjacency plane : planes) {
+				failure = KernelRuntime.closeResource(plane, failure);
 			}
-			try {
-				probe.close();
-			} catch (RuntimeException | Error problem) {
-				if (failure == null) {
-					failure = problem;
-				} else if (failure != problem) {
-					failure.addSuppressed(problem);
-				}
-			}
-			if (failure instanceof Error) {
-				throw (Error) failure;
-			}
-			if (failure != null) {
-				throw (RuntimeException) failure;
-			}
+			failure = KernelRuntime.closeResource(probe, failure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(failure, null);
 		}
+	}
 
-		private static void closePlanes(NativeLmdbQuerySource.NativeAdjacency[] planes, int count) {
-			for (int i = 0; i < count; i++) {
-				if (planes[i] != null) {
-					planes[i].close();
-				}
-			}
-		}
+	private record ParallelHistogram(LongHistogram histogram, long roots, long denseRanges, long fallbackRanges) {
 	}
 
 	private static final class HistogramResult {
@@ -887,12 +1850,23 @@ final class LmdbNativeRunCountHistogram implements NativeAggregateAlternative {
 	private static final class LongHistogram implements AutoCloseable {
 		private final NativeLmdbQuerySource source;
 		private final NativeCancellationToken cancellation;
+		private final long countStoreBytes;
 		private final NativeStructuralCounts counts;
 
 		LongHistogram(NativeLmdbQuerySource source, NativeCancellationToken cancellation) {
+			this(source, cancellation, null);
+		}
+
+		LongHistogram(NativeLmdbQuerySource source, NativeCancellationToken cancellation, QueryLedger ledger) {
+			this(source, cancellation, ledger, -1L);
+		}
+
+		LongHistogram(NativeLmdbQuerySource source, NativeCancellationToken cancellation, QueryLedger ledger,
+				long countStoreBytes) {
 			this.source = source;
 			this.cancellation = cancellation;
-			counts = new NativeStructuralCounts(source, cancellation, 1, true);
+			this.countStoreBytes = countStoreBytes;
+			counts = new NativeStructuralCounts(source, cancellation, 1, true, ledger, countStoreBytes);
 		}
 
 		void increment(long key) {

@@ -23,6 +23,9 @@ final class NativePhysicalInputRecipe {
 	private enum Kind {
 		PATTERN,
 		EXTENSION,
+		FILTER,
+		JOIN,
+		MULTI_JOIN,
 		VALUES,
 		LEXICAL,
 		SINGLETON,
@@ -49,14 +52,21 @@ final class NativePhysicalInputRecipe {
 	private record ValueRow(List<Integer> slots, List<Long> values) {
 	}
 
+	private record FilterRecipe(long mask, NativeScalarPlan scalar, Integer kindSlot, Integer kinds, int depth) {
+	}
+
+	private record IncidenceRecipe(Object boundary, List<String> entryNames, long axes,
+			NativeSubqueryPlan.IncidenceReduction reduction) {
+	}
+
 	private final Kind kind;
 	private final Object description;
-	private final NativePhysicalInputRecipe child;
+	private final List<NativePhysicalInputRecipe> children;
 
-	private NativePhysicalInputRecipe(Kind kind, Object description, NativePhysicalInputRecipe child) {
+	private NativePhysicalInputRecipe(Kind kind, Object description, NativePhysicalInputRecipe... children) {
 		this.kind = kind;
 		this.description = description;
-		this.child = child;
+		this.children = List.of(children);
 	}
 
 	static NativePhysicalInputRecipe capture(SlotPlan plan) {
@@ -68,7 +78,7 @@ final class NativePhysicalInputRecipe {
 							TermRecipe.of(pattern.o),
 							TermRecipe.of(pattern.c), contexts, pattern.contexts.ids == null, pattern.namedContextScope,
 							pattern.range), pattern.statementOrder, pattern.indexName),
-					null);
+					new NativePhysicalInputRecipe[0]);
 		}
 		if (plan instanceof ExtensionPlan extension) {
 			NativePhysicalInputRecipe child = capture(extension.arg);
@@ -87,24 +97,71 @@ final class NativePhysicalInputRecipe {
 			}
 			return new NativePhysicalInputRecipe(Kind.EXTENSION, List.copyOf(assignments), child);
 		}
+		if (plan instanceof FilterPlan filter) {
+			NativePhysicalInputRecipe child = capture(filter.arg);
+			FilterRecipe condition = filterRecipe(filter.filter, filter.filterMask, filter.termKindFilter, -1);
+			return child == null || condition == null ? null
+					: new NativePhysicalInputRecipe(Kind.FILTER, condition, child);
+		}
+		if (plan instanceof JoinPlan join) {
+			NativePhysicalInputRecipe left = capture(join.left);
+			NativePhysicalInputRecipe right = capture(join.right);
+			return left == null || right == null ? null
+					: new NativePhysicalInputRecipe(Kind.JOIN, List.of(), left, right);
+		}
+		if (plan instanceof MultiJoinPlan join) {
+			NativePhysicalInputRecipe[] children = new NativePhysicalInputRecipe[join.children.length];
+			for (int i = 0; i < children.length; i++) {
+				children[i] = capture(join.children[i]);
+				if (children[i] == null) {
+					return null;
+				}
+			}
+			List<FilterRecipe> filters = new ArrayList<>(join.filters.length);
+			for (MaskedFilter filter : join.filters) {
+				FilterRecipe condition = filterRecipe(filter.filter, filter.mask, null, filter.plannedDepth);
+				if (condition == null) {
+					return null;
+				}
+				filters.add(condition);
+			}
+			return new NativePhysicalInputRecipe(Kind.MULTI_JOIN, List.copyOf(filters), children);
+		}
 		if (plan instanceof ValuesPlan values) {
 			List<ValueRow> rows = new ArrayList<>(values.rows.length);
 			for (ValuesRow row : values.rows) {
 				rows.add(new ValueRow(Arrays.stream(row.slots).boxed().toList(),
 						Arrays.stream(row.values).boxed().toList()));
 			}
-			return new NativePhysicalInputRecipe(Kind.VALUES, List.copyOf(rows), null);
+			return new NativePhysicalInputRecipe(Kind.VALUES, List.copyOf(rows));
 		}
 		if (plan instanceof NativeSubqueryPlan lexical) {
-			return new NativePhysicalInputRecipe(Kind.LEXICAL, lexical.boundaryStructure(), null);
+			NativeSubqueryPlan.Incidence incidence = lexical.incidence();
+			if (incidence == null) {
+				return new NativePhysicalInputRecipe(Kind.LEXICAL, lexical.boundaryStructure());
+			}
+			NativePhysicalInputRecipe pattern = capture(incidence.pattern());
+			return pattern == null ? null
+					: new NativePhysicalInputRecipe(Kind.LEXICAL,
+							new IncidenceRecipe(lexical.boundaryStructure(), incidence.entryNames(), incidence.axes(),
+									incidence.reduction()),
+							pattern);
 		}
 		if (plan instanceof SingletonPlan) {
-			return new NativePhysicalInputRecipe(Kind.SINGLETON, List.of(), null);
+			return new NativePhysicalInputRecipe(Kind.SINGLETON, List.of());
 		}
 		if (plan instanceof EmptyPlan) {
-			return new NativePhysicalInputRecipe(Kind.EMPTY, List.of(), null);
+			return new NativePhysicalInputRecipe(Kind.EMPTY, List.of());
 		}
 		return null;
+	}
+
+	private static FilterRecipe filterRecipe(NativeBooleanFilter filter, long mask,
+			LmdbNativeTermKindFilter kind, int depth) {
+		NativeScalarPlan scalar = filter.scalarPlan();
+		return scalar == null ? null
+				: new FilterRecipe(mask, scalar, kind == null ? null : kind.slot,
+						kind == null ? null : kind.acceptedKinds, depth);
 	}
 
 	boolean matches(SlotPlan actual) {
@@ -118,6 +175,14 @@ final class NativePhysicalInputRecipe {
 		boolean same = kind == Kind.PATTERN
 				? ((OrderedPattern) description).semantics.equals(((OrderedPattern) actual.description).semantics)
 				: description.equals(actual.description);
-		return same && (child == null ? actual.child == null : child.equalsRecipe(actual.child));
+		if (!same || children.size() != actual.children.size()) {
+			return false;
+		}
+		for (int i = 0; i < children.size(); i++) {
+			if (!children.get(i).equalsRecipe(actual.children.get(i))) {
+				return false;
+			}
+		}
+		return true;
 	}
 }

@@ -492,6 +492,10 @@ class CompactCsfPageReader {
 	 * intervening context counts, never their neighbor IDs.
 	 */
 	long seekFollowingFiber(int rowIndex, int fromFiber, int skipQuads) {
+		return seekFollowingFiber(rowIndex, fromFiber, skipQuads, null);
+	}
+
+	long seekFollowingFiber(int rowIndex, int fromFiber, int skipQuads, Runnable cancellationPoll) {
 		checkRow(rowIndex);
 		int start = rowFiberOffset(rowIndex);
 		int count = rowFiberOffset(rowIndex + 1) - start;
@@ -505,6 +509,9 @@ class CompactCsfPageReader {
 		}
 		int fiber = fromFiber;
 		while (skipQuads > 0 && fiber < count) {
+			if (((fiber - fromFiber) & 255) == 0) {
+				poll(cancellationPoll);
+			}
 			int contexts = fiberContextCount(start + fiber);
 			if (skipQuads < contexts)
 				break;
@@ -524,6 +531,22 @@ class CompactCsfPageReader {
 			return neighborAtFiber(rowIndex, toFiber - 1);
 		int tail = rowFiberStart(rowIndex) - rowIndex + fromFiber - 1;
 		return previousNeighbor + neighborRangeSum(tail, toFiber - fromFiber);
+	}
+
+	long neighborBeforeFollowingFiber(int rowIndex, int fromFiber, int toFiber, long previousNeighbor,
+			Runnable cancellationPoll) {
+		if (cancellationPoll == null) {
+			return neighborBeforeFollowingFiber(rowIndex, fromFiber, toFiber, previousNeighbor);
+		}
+		if (toFiber == fromFiber) {
+			return previousNeighbor;
+		}
+		int tail = rowFiberStart(rowIndex) - rowIndex;
+		if (fromFiber == 0) {
+			return PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex)
+					+ neighborRangeSum(tail, toFiber - 1, cancellationPoll);
+		}
+		return previousNeighbor + neighborRangeSum(tail + fromFiber - 1, toFiber - fromFiber, cancellationPoll);
 	}
 
 	/** Sequential continuation using the preceding decoded neighbor, never a repeated row-prefix walk. */
@@ -557,7 +580,7 @@ class CompactCsfPageReader {
 	 * lane represents all remaining contexts for its neighbor in this page fragment.
 	 */
 	int copyFibersFromQuadOffset(int rowIndex, int fromOrdinal, int length, long[] neighborTarget,
-			int neighborOffset, long[] multiplicityTarget, int multiplicityOffset) {
+			int neighborOffset, long[] multiplicityTarget, int multiplicityOffset, Runnable cancellationPoll) {
 		checkRow(rowIndex);
 		if (fromOrdinal < 0 || length < 0 || neighborTarget == null || multiplicityTarget == null) {
 			throw new IllegalArgumentException("physical fiber copy requires valid offsets and non-null targets");
@@ -579,8 +602,44 @@ class CompactCsfPageReader {
 			return 0;
 		}
 		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) {
-			return copyFibers(rowIndex, fromOrdinal, maximum, neighborTarget, neighborOffset, multiplicityTarget,
-					multiplicityOffset);
+			int copied = Math.min(maximum, rowFibers - fromOrdinal);
+			if (fromOrdinal == 0 && copied <= 16) {
+				poll(cancellationPoll);
+				return copyFibers(rowIndex, fromOrdinal, maximum, neighborTarget, neighborOffset, multiplicityTarget,
+						multiplicityOffset);
+			}
+			int tail = rowFiberStart - rowIndex;
+			long neighbor = PackedLongVector.nativeGet(firstNeighborsAddress(), rowIndex);
+			for (int skipped = 0; skipped < fromOrdinal;) {
+				poll(cancellationPoll);
+				int take = Math.min(256, fromOrdinal - skipped);
+				neighbor += PackedLongVector.nativeRangeSum(neighborTailsAddress(), fiberCount - rowCount,
+						tail + skipped, take);
+				skipped += take;
+			}
+			// Preserve copyFibers' bulk write order when the target ranges overlap: all neighbors first, then weights.
+			for (int output = 0; output < copied;) {
+				poll(cancellationPoll);
+				int take = Math.min(256, copied - output);
+				neighborTarget[neighborOffset + output] = neighbor;
+				if (take > 1) {
+					PackedLongVector.nativeCopyCumulative(neighborTailsAddress(), fiberCount - rowCount,
+							tail + fromOrdinal + output, 1, take - 1, neighbor, neighborTarget,
+							neighborOffset + output + 1);
+				}
+				output += take;
+				if (output < copied) {
+					neighbor = neighborTarget[neighborOffset + output - 1]
+							+ PackedLongVector.nativeGet(neighborTailsAddress(), tail + fromOrdinal + output - 1);
+				}
+			}
+			for (int output = 0; output < copied;) {
+				poll(cancellationPoll);
+				int take = Math.min(256, copied - output);
+				Arrays.fill(multiplicityTarget, multiplicityOffset + output, multiplicityOffset + output + take, 1L);
+				output += take;
+			}
+			return copied;
 		}
 
 		int neighborTailStart = rowFiberStart - rowIndex;
@@ -588,6 +647,9 @@ class CompactCsfPageReader {
 		int ordinal = 0;
 		int copied = 0;
 		for (int localFiber = 0; localFiber < rowFibers && copied < maximum; localFiber++) {
+			if ((localFiber & 255) == 0) {
+				poll(cancellationPoll);
+			}
 			if (localFiber > 0) {
 				neighbor += PackedLongVector.nativeGet(neighborTailsAddress(), neighborTailStart + localFiber - 1);
 			}
@@ -602,6 +664,191 @@ class CompactCsfPageReader {
 			ordinal = end;
 		}
 		return copied;
+	}
+
+	/** Reusable, page-local position for one independently consumed quad column. */
+	static final class ColumnCopyState {
+		int pageId = CompactCsfPageFormat.NO_PAGE;
+		int prefixPageId = CompactCsfPageFormat.NO_PAGE;
+		int prefixFibers;
+		int prefixContexts;
+		long pageStart;
+		int row;
+		int rowQuads;
+		int ordinal;
+		int fiber;
+		int fiberEnd;
+		int fiberContexts;
+		int withinFiber;
+		int contextTail;
+		long value;
+	}
+
+	void initializeColumnCopy(ColumnCopyState state, int pageId, long pageStart, int row, boolean contexts,
+			Runnable cancellationPoll) {
+		checkRow(row);
+		// A cancellation during initialization must leave this position invalid so a later retry starts safely.
+		state.pageId = CompactCsfPageFormat.NO_PAGE;
+		state.pageStart = pageStart;
+		state.row = row;
+		state.rowQuads = rowQuadCount(row);
+		state.ordinal = 0;
+		state.fiber = rowFiberOffset(row);
+		state.fiberEnd = rowFiberOffset(row + 1);
+		state.withinFiber = 0;
+		state.fiberContexts = fiberContextCount(state.fiber);
+		if (contexts) {
+			state.contextTail = 0;
+			if (!flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) {
+				// Keep the context-count prefix across successive roots on the same page. A fresh or backward seek
+				// starts again at the page boundary; sequential roots visit each preceding fiber only once.
+				if (state.prefixPageId != pageId || state.fiber < state.prefixFibers) {
+					state.prefixPageId = pageId;
+					state.prefixFibers = 0;
+					state.prefixContexts = 0;
+				}
+				while (state.prefixFibers < state.fiber) {
+					poll(cancellationPoll);
+					int take = Math.min(256, state.fiber - state.prefixFibers);
+					state.prefixContexts = Math.addExact(state.prefixContexts,
+							Math.toIntExact(PackedLongVector.nativeRangeSum(contextCountsAddress(), fiberCount,
+									state.prefixFibers, take)));
+					state.prefixFibers += take;
+				}
+				state.contextTail = state.prefixContexts - state.fiber;
+			}
+			state.value = flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)
+					? UnsafeAccess.getLongLE(address + CompactCsfPageFormat.COMMON_CONTEXT_AT)
+					: PackedLongVector.nativeGet(firstContextsAddress(), state.fiber);
+		} else {
+			state.value = PackedLongVector.nativeGet(firstNeighborsAddress(), row);
+		}
+		state.pageId = pageId;
+	}
+
+	/** Advances by at most one bounded batch, optionally writing that batch to the target column. */
+	void copySequentialColumn(ColumnCopyState state, int length, boolean contexts, long[] target, int targetOffset) {
+		if (flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)) {
+			int first = state.fiber;
+			if (target != null) {
+				if (contexts) {
+					if (flag(CompactCsfPageFormat.FLAG_COMMON_CONTEXT)) {
+						Arrays.fill(target, targetOffset, targetOffset + length, state.value);
+					} else {
+						PackedLongVector.nativeCopy(firstContextsAddress(), fiberCount, first, length, target,
+								targetOffset);
+					}
+				} else {
+					target[targetOffset] = state.value;
+					if (length > 1) {
+						PackedLongVector.nativeCopyCumulative(neighborTailsAddress(), fiberCount - rowCount,
+								first - state.row, 1, length - 1, state.value, target, targetOffset + 1);
+					}
+				}
+			}
+			state.fiber += length;
+			state.ordinal += length;
+			if (!contexts && state.fiber < state.fiberEnd) {
+				state.value = target == null
+						? state.value + PackedLongVector.nativeRangeSum(neighborTailsAddress(), fiberCount - rowCount,
+								first - state.row, length)
+						: target[targetOffset + length - 1]
+								+ PackedLongVector.nativeGet(neighborTailsAddress(), first - state.row + length - 1);
+			}
+			return;
+		}
+
+		int copied = 0;
+		while (copied < length) {
+			int take = Math.min(length - copied, state.fiberContexts - state.withinFiber);
+			boolean moreInFiber = state.withinFiber + take < state.fiberContexts;
+			if (contexts) {
+				if (target != null) {
+					target[targetOffset + copied] = state.value;
+					if (take > 1) {
+						PackedLongVector.nativeCopyCumulative(contextTailsAddress(), quadCount - fiberCount,
+								state.contextTail + state.withinFiber, 1, take - 1, state.value, target,
+								targetOffset + copied + 1);
+					}
+					if (moreInFiber) {
+						state.value = target[targetOffset + copied + take - 1]
+								+ PackedLongVector.nativeGet(contextTailsAddress(),
+										state.contextTail + state.withinFiber + take - 1);
+					}
+				} else if (moreInFiber) {
+					state.value += PackedLongVector.nativeRangeSum(contextTailsAddress(), quadCount - fiberCount,
+							state.contextTail + state.withinFiber, take);
+				}
+			} else if (target != null) {
+				Arrays.fill(target, targetOffset + copied, targetOffset + copied + take, state.value);
+			}
+			copied += take;
+			state.ordinal += take;
+			state.withinFiber += take;
+			if (!moreInFiber) {
+				int previousFiber = state.fiber++;
+				state.withinFiber = 0;
+				if (contexts) {
+					state.contextTail += state.fiberContexts - 1;
+				}
+				if (state.fiber < state.fiberEnd) {
+					state.fiberContexts = fiberContextCount(state.fiber);
+					state.value = contexts ? PackedLongVector.nativeGet(firstContextsAddress(), state.fiber)
+							: state.value
+									+ PackedLongVector.nativeGet(neighborTailsAddress(), previousFiber - state.row);
+				}
+			}
+		}
+	}
+
+	boolean singleContextRows() {
+		return flag(CompactCsfPageFormat.FLAG_CONTEXT_COUNT_ONE)
+				&& flag(CompactCsfPageFormat.FLAG_ROW_QUAD_EQUALS_NEIGHBOR);
+	}
+
+	/** Seek within a single-context row while retaining existing prefix accelerators when available. */
+	void skipSingleContextColumn(ColumnCopyState state, int skip, boolean contexts, Runnable cancellationPoll) {
+		if (!contexts) {
+			int from = state.fiber - state.row;
+			long value = state.value + neighborRangeSum(from, skip, cancellationPoll);
+			state.value = value;
+		}
+		state.fiber += skip;
+		state.ordinal += skip;
+	}
+
+	/** Seek within one fiber without decoding its neighbor or context values that the caller does not request. */
+	void skipWithinFiber(ColumnCopyState state, int skip, boolean contexts, Runnable cancellationPoll) {
+		if (contexts) {
+			int from = state.contextTail + state.withinFiber;
+			long prefix = contextTailPrefixAddress();
+			long value = state.value;
+			if (cancellationPoll == null || prefix != 0) {
+				value += prefix == 0
+						? PackedLongVector.nativeRangeSum(contextTailsAddress(), quadCount - fiberCount, from, skip)
+						: PackedLongVector.nativeRangeSum(contextTailsAddress(), quadCount - fiberCount, from, skip,
+								prefix, contextTailPrefixShift());
+			} else {
+				int remaining = skip;
+				while (remaining > 0) {
+					poll(cancellationPoll);
+					int take = Math.min(256, remaining);
+					value += PackedLongVector.nativeRangeSum(contextTailsAddress(), quadCount - fiberCount, from,
+							take);
+					from += take;
+					remaining -= take;
+				}
+			}
+			state.value = value;
+		}
+		state.withinFiber += skip;
+		state.ordinal += skip;
+	}
+
+	static void poll(Runnable cancellationPoll) {
+		if (cancellationPoll != null) {
+			cancellationPoll.run();
+		}
 	}
 
 	long contextAt(int fiberOrdinal, int localContext) {
@@ -852,6 +1099,23 @@ class CompactCsfPageReader {
 				? PackedLongVector.nativeRangeSum(neighborTailsAddress(), valueCount, fromOrdinal, length,
 						adaptive.prefixes, adaptive.prefixShift)
 				: PackedLongVector.nativeRangeSum(neighborTailsAddress(), valueCount, fromOrdinal, length);
+	}
+
+	private long neighborRangeSum(int fromOrdinal, int length, Runnable cancellationPoll) {
+		if (cancellationPoll == null || neighborPrefixAddress() != 0
+				|| adaptiveNeighbor != null && adaptiveNeighbor.ready) {
+			return neighborRangeSum(fromOrdinal, length);
+		}
+		long sum = 0;
+		int remaining = length;
+		while (remaining > 0) {
+			poll(cancellationPoll);
+			int take = Math.min(256, remaining);
+			sum += PackedLongVector.nativeRangeSum(neighborTailsAddress(), fiberCount - rowCount, fromOrdinal, take);
+			fromOrdinal += take;
+			remaining -= take;
+		}
+		return sum;
 	}
 
 	private void copyNeighborCumulative(int fromOrdinal, int skipped, int length, long initial, long[] target,

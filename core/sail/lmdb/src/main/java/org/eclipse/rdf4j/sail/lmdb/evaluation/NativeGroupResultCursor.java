@@ -48,6 +48,11 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 	private NativeExecutionPhaseEvent.Span phase;
 	private Throwable terminalFailure;
 
+	/** A frozen producer refused before any of its rows or effects were published. */
+	private static final class SparseOpenDeclined extends Exception {
+		private static final long serialVersionUID = 1L;
+	}
+
 	NativeGroupResultCursor(NativeGroupIteration iteration, NativeExecutionContext context, boolean closeContext) {
 		this(null, iteration, context, closeContext, null);
 	}
@@ -159,15 +164,162 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		alternatives.add(resource);
 	}
 
-	record GroupingPlan(SlotPlan input, AggregateDistinctChannels channels, boolean streaming, String tag) {
-		NativeGroupResultCursor open(NativeGroupIteration iteration, NativeExecutionContext context) {
-			return new NativeGroupResultCursor(null, iteration, context, false, this);
+	/** Prepare a selected blocking sparse producer while its caller can still honor the fixed fallback. */
+	boolean prepareSparse() {
+		if (fixedPlan == null || fixedPlan.sparse() == null || initialized) {
+			throw new IllegalStateException("Expected one unopened sparse physical group");
+		}
+		NativeExecutionContext.Lease activeLease = null;
+		Throwable failure = null;
+		boolean declined = false;
+		try (NativeCancellationToken.Scope ignored = cancellation().enter();
+				NativeExecutionPhaseEvent.InputScope inputScope = inputPhases == null ? null : inputPhases.enter()) {
+			if (context != null && lease == null) {
+				activeLease = context.retainActiveLease();
+			}
+			cancellation().check();
+			initialize();
+			cancellation().check();
+		} catch (SparseOpenDeclined refused) {
+			Throwable[] suppressed = refused.getSuppressed();
+			if (cancellation().isCancellationRequested()) {
+				try {
+					cancellation().check();
+				} catch (Throwable cancelled) {
+					failure = cancelled;
+				}
+			} else if (suppressed.length == 0) {
+				declined = true;
+			}
+			for (Throwable cleanup : suppressed) {
+				if (failure == null) {
+					failure = cleanup;
+				} else if (cleanup != failure) {
+					failure.addSuppressed(cleanup);
+				}
+			}
+		} catch (Throwable problem) {
+			failure = problem;
+		}
+		failure = KernelRuntime.closeResource(activeLease, failure);
+		if (declined || failure != null) {
+			failure = KernelRuntime.closeResource(this, failure);
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+		return !declined;
+	}
+
+	record GroupingPlan(SlotPlan input, AggregateDistinctChannels channels, boolean streaming, String tag,
+			LmdbSparseJoinAggregatePlan sparse) {
+		GroupingPlan(SlotPlan input, AggregateDistinctChannels channels, boolean streaming, String tag) {
+			this(input, channels, streaming, tag, null);
+		}
+
+		NativeAggregatePhysicalPlan physical(NativeGroupIteration iteration) {
+			return sparse == null ? NativeAggregatePhysicalPlan.typed(this, iteration)
+					: new NativeAggregatePhysicalPlan(input, sparse.retention(), sparse);
+		}
+
+		NativeResultCursor open(NativeGroupIteration iteration, RowState row, NativeExecutionContext context) {
+			if (sparse == null) {
+				return new NativeGroupResultCursor(null, iteration, context, false, this);
+			}
+			List<BindingSet> output = sparse.evaluate(iteration, row);
+			if (output == null) {
+				return null;
+			}
+			LmdbNativeExplain.recordExecutionPath(iteration.explainTarget, tag);
+			NativeResultCursor delegate;
+			try {
+				if (output instanceof NativeReplayBindingList replay) {
+					delegate = replay.physicalCursor();
+				} else {
+					Iterator<BindingSet> rows = output.iterator();
+					delegate = new NativeResultCursor() {
+						@Override
+						public NativeResultRow next() {
+							iteration.cancellation.check();
+							return rows.hasNext()
+									? NativeResultRow.fromBindingSet(iteration.physicalSchema(), rows.next())
+									: null;
+						}
+
+						@Override
+						public NativeExecutionContext executionContext() {
+							return context;
+						}
+
+						@Override
+						public NativeCancellationToken cancellation() {
+							return iteration.cancellation;
+						}
+
+						@Override
+						public void close() {
+							if (rows instanceof AutoCloseable resource) {
+								KernelRuntime.rethrowCloseFailure(KernelRuntime.closeResource(resource, null));
+							}
+						}
+					};
+				}
+			} catch (RuntimeException | Error failure) {
+				KernelRuntime.rethrowCloseFailureIfNotPrimary(
+						output instanceof AutoCloseable resource ? KernelRuntime.closeResource(resource, failure)
+								: failure,
+						failure);
+				throw failure;
+			}
+			return new NativeResultCursor() {
+				private boolean closed;
+
+				@Override
+				public NativeResultRow next() {
+					return delegate.next();
+				}
+
+				@Override
+				public NativeExecutionContext executionContext() {
+					return delegate.executionContext();
+				}
+
+				@Override
+				public NativeCancellationToken cancellation() {
+					return delegate.cancellation();
+				}
+
+				@Override
+				public boolean requestCancellation() {
+					return delegate.requestCancellation();
+				}
+
+				@Override
+				public void close() {
+					if (closed) {
+						return;
+					}
+					closed = true;
+					Throwable failure = KernelRuntime.closeResource(delegate, null);
+					failure = output instanceof AutoCloseable resource ? KernelRuntime.closeResource(resource, failure)
+							: failure;
+					KernelRuntime.rethrowCloseFailure(failure);
+				}
+			};
 		}
 	}
 
 	static GroupingPlan tablePlan(NativeGroupIteration iteration) {
 		return new GroupingPlan(iteration.arg, iteration.sequentialDistinctChannels, false,
 				LmdbNativeAttemptMetrics.PATH_NESTED_LOOP);
+	}
+
+	static GroupingPlan sparsePlan(NativeGroupIteration iteration, RowState row) {
+		LmdbSparseJoinAggregatePlan sparse = iteration.sparseJoinAggregate == null ? null
+				: iteration.sparseJoinAggregate.prepare(row);
+		return sparse == null || iteration.forcedExecutionStrategy == null && !sparse.automaticCandidate(row) ? null
+				: new GroupingPlan(iteration.arg, iteration.sequentialDistinctChannels, false,
+						LmdbNativeAttemptMetrics.PATH_SPARSE_JOIN_AGGREGATE, sparse);
 	}
 
 	static GroupingPlan orderedPlan(NativeGroupIteration iteration, RowState row) {
@@ -223,6 +375,13 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 				plan = tablePlan(iteration);
 			}
 		}
+		if (plan.sparse() != null) {
+			results = seeded ? plan.open(iteration, row, executionContext()) : null;
+			if (results == null) {
+				throw new SparseOpenDeclined();
+			}
+			return;
+		}
 		channels = plan.channels();
 		streaming = seeded && plan.streaming();
 		row.encounterOrderRequired |= !allowsReorderedGrouping(iteration);
@@ -273,6 +432,15 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			offerGroupingPlan(offers, quotes, ordered, row);
 		}
 		NativeGroupStep full = owner.fullValueAlternative();
+		if (full == null && !owner.requiresPhysicalResults()) {
+			// A full-RDF relation consumer still gets the complete ordinary GROUP inventory, including its IR,
+			// parallel and structural producers. The independent attempt owns its exact evaluation scope.
+			full = owner;
+		}
+		GroupingPlan sparse = full == owner ? null : sparsePlan(iteration, row);
+		if (sparse != null) {
+			offerGroupingPlan(offers, quotes, sparse, row);
+		}
 		FullAttempt fullAttempt = null;
 		if (full != null) {
 			fullAttempt = new FullAttempt(full, iteration);
@@ -282,8 +450,11 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 		LmdbNativeDispatchLoop<Void, NativeResultCursor> loop = new LmdbNativeDispatchLoop<>(
 				LmdbNativeDecisionPoint.GROUP_PHYSICAL, offers.strategies(), iteration.explainTarget)
 						.label(iteration.decisionPoint())
+						.sharedRow(fullAttempt == null ? row : fullAttempt.row)
 						.forcing(iteration.forcedExecutionStrategy)
-						.advice(LmdbNativeAdvisoryLearner.scope(row, iteration.arg));
+						.advice(LmdbNativeAdvisoryLearner.scope(row, iteration.arg))
+						.budgetRefusals(iteration.mayRetryBudgetRefusal()
+								&& (fullAttempt == null || fullAttempt.iteration.mayRetryBudgetRefusal()));
 		if (preview) {
 			loop.preview(null);
 			if (fullAttempt != null) {
@@ -314,13 +485,13 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			GroupingPlan plan, RowState row) throws IOException {
 		SlotPlan quotedInput = NativeAggregatePhysicalPlan.bindLexicalInputs(plan.input(), row);
 		GroupingPlan actual = quotedInput == null ? plan
-				: new GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag());
+				: new GroupingPlan(quotedInput, plan.channels(), plan.streaming(), plan.tag(), plan.sparse());
 		offers.offer(actual.tag(), () -> quotes.attach(new LmdbNativeStrategyProposal<NativeResultCursor>(
-				() -> actual.open(iteration, executionContext()),
+				() -> actual.open(iteration, row, executionContext()),
 				actual.input().estimateWork(row, row.boundMask()), LmdbNativeWork.ZERO,
 				iteration.groupSlots.length == 0 && iteration.havingCondition == null ? 1D : Double.NaN,
 				actual.tag(), () -> {
-				}).withAggregatePhysicalPlan(NativeAggregatePhysicalPlan.typed(actual, iteration))));
+				}).withAggregatePhysicalPlan(actual.physical(iteration))));
 	}
 
 	private RowCursor openInput(GroupingPlan plan) throws Exception {
@@ -581,6 +752,18 @@ final class NativeGroupResultCursor implements NativeResultCursor {
 			}
 			NativeAggregateCostQuotes quotes = new NativeAggregateCostQuotes(iteration, row, telemetry);
 			iteration.offerCandidates(row, metrics, originalArg, new LmdbNativeCandidateOffers<>() {
+				@Override
+				LmdbNativeCandidateOffers<List<BindingSet>> offerVariants(
+						VariantsProposer<List<BindingSet>> proposer) throws IOException {
+					arbiter.offerVariants(() -> {
+						List<LmdbNativeStrategyProposal<List<BindingSet>>> variants = proposer.propose();
+						return variants == null ? null
+								: LmdbNativeCandidateOffers.mapVariants(variants,
+										proposal -> map(proposal, quotes));
+					});
+					return this;
+				}
+
 				@Override
 				LmdbNativeCandidateOffers<List<BindingSet>> offer(
 						LmdbNativeCandidateOffers.Proposer<List<BindingSet>> proposer) throws IOException {

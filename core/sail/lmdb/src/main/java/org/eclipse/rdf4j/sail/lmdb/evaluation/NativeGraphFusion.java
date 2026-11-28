@@ -343,7 +343,7 @@ final class NativeGraphFusion {
 		return input.bindingDomainKnown() && !input.maybeBoundNames().contains(name.getName());
 	}
 
-	private static boolean hasSafeSelectorAndDataset(Graph graph, Dataset dataset) {
+	static boolean hasSafeSelectorAndDataset(Graph graph, Dataset dataset) {
 		Value selector = graph.getGraphName().getValue();
 		return (selector == null
 				|| selector instanceof Resource && !GraphScopeOptimizer.requiresSemanticSelection(selector))

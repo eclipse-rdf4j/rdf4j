@@ -19,6 +19,7 @@ import java.util.List;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.*;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeKernelIr.FilterResidual;
 
 /**
  * Generic source emitter for kernel IR trees (plan: plans/lmdb-native-engine/19-kernel-ir-primitives.md). Turns any
@@ -836,15 +837,19 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		/**
-		 * One global COUNT(*) over unique root keys with an existential linear probe chain.
+		 * One global count over distinct root keys with an existential linear probe chain.
 		 */
 		private static final class FlatRootExists {
-			final EnumerateAdjKeys root;
+			final Node root;
 			final Exists exists;
 
-			FlatRootExists(EnumerateAdjKeys root, Exists exists) {
+			FlatRootExists(Node root, Exists exists) {
 				this.root = root;
 				this.exists = exists;
+			}
+
+			int rootColumn() {
+				return root instanceof EnumerateAdjKeys keys ? keys.keyCol : ((EnumerateDomain) root).col;
 			}
 		}
 
@@ -858,19 +863,33 @@ final class LmdbNativeKernelEmitter {
 			if (!(kernel.terminal instanceof Aggregate aggregate)
 					|| aggregate.groupCols.length != 0
 					|| aggregate.outputs.length != 1
-					|| aggregate.outputs[0].kind != LmdbNativeKernelIr.AGG_COUNT_STAR
 					|| aggregate.having != null
 					|| aggregate.mods.orderKeys != null
 					|| aggregate.mods.limit >= 0
 					|| aggregate.mods.offset != 0
 					|| kernel.pipeline.size() != 2
-					|| !(kernel.pipeline.get(0) instanceof EnumerateAdjKeys root)
-					|| root.valueCol >= 0
-					|| root.ctxActive()
 					|| !(kernel.pipeline.get(1) instanceof Exists exists)
 					|| exists.negated) {
 				return null;
 			}
+			Node root = kernel.pipeline.get(0);
+			AggregateOutput output = aggregate.outputs[0];
+			int rootColumn;
+			if (root instanceof EnumerateAdjKeys keys && keys.valueCol < 0 && !keys.ctxActive()
+					&& output.kind == LmdbNativeKernelIr.AGG_COUNT_STAR) {
+				rootColumn = keys.keyCol;
+			} else if (root instanceof EnumerateDomain domain && domain.sortedKeys
+					&& output.kind == LmdbNativeKernelIr.AGG_COUNT_DISTINCT && !output.hookDistinct
+					&& output.col == domain.col && output.orderedDomain == domain.domain) {
+				rootColumn = domain.col;
+			} else {
+				return null;
+			}
+			// Local variables must have exactly one definition along this linear witness. Register-rewriting or
+			// externally initialized shapes retain the ordinary emitter, which owns the complete register frame.
+			BitSet unavailable = new BitSet(kernel.columnCount);
+			unavailable.set(0, kernel.columnCount);
+			unavailable.clear(rootColumn);
 			boolean hasProbe = false;
 			for (Node node : exists.pipeline) {
 				if (node instanceof Probe probe) {
@@ -881,6 +900,17 @@ final class LmdbNativeKernelEmitter {
 				} else if (!(node instanceof BindAlias) && !LmdbNativeKernelIr.isFilter(node)) {
 					return null;
 				}
+				if (Kernel.readsColumns(node, unavailable)) {
+					return null;
+				}
+				BitSet produced = new BitSet();
+				node.produced(produced);
+				BitSet reassigned = (BitSet) produced.clone();
+				reassigned.andNot(unavailable);
+				if (!reassigned.isEmpty()) {
+					return null;
+				}
+				unavailable.andNot(produced);
 			}
 			return hasProbe ? new FlatRootExists(root, exists) : null;
 		}
@@ -908,6 +938,10 @@ final class LmdbNativeKernelEmitter {
 		}
 
 		private String emitFlatRootExistsMethod(FlatRootExists shape, String methodName, boolean decoded) {
+			if (shape.root instanceof EnumerateDomain domain) {
+				return emitFlatDomainExistsMethod(shape, domain, methodName, decoded);
+			}
+			EnumerateAdjKeys root = (EnumerateAdjKeys) shape.root;
 			int keyCursorId = keyRunCursorId(shape.root);
 			String cursor = "ak" + keyCursorId;
 			StringBuilder body = new StringBuilder(2048);
@@ -918,22 +952,22 @@ final class LmdbNativeKernelEmitter {
 					.append("        ")
 					.append(cursor)
 					.append(" = a")
-					.append(shape.root.adjacency)
+					.append(root.adjacency)
 					.append(".openKeyRunCursor();\n")
 					.append("        if (")
 					.append(cursor)
 					.append(" != null) {\n")
 					.append("            long v")
-					.append(shape.root.keyCol)
+					.append(root.keyCol)
 					.append(";\n")
 					.append("            roots: while ((v")
-					.append(shape.root.keyCol)
+					.append(root.keyCol)
 					.append(" = ")
 					.append(cursor)
 					.append(".nextKey()) != -1L) {\n")
 					.append("                if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n");
 			BitSet bound = new BitSet();
-			bound.set(shape.root.keyCol);
+			bound.set(root.keyCol);
 			emitFlatExistsNodesDirect(body, shape.exists.pipeline, 0, "                ", decoded, bound);
 			body.append("            }\n")
 					.append("            ")
@@ -948,13 +982,90 @@ final class LmdbNativeKernelEmitter {
 			return body.toString();
 		}
 
+		/**
+		 * Class extents are bound as one neighbor-domain array, not a whole-predicate key cursor. The array can repeat
+		 * a subject once per context, so preserve the ordered distinct accumulator and its runtime hash fallback.
+		 * Repeated roots still evaluate their witness: only the aggregate contribution is deduplicated.
+		 */
+		private String emitFlatDomainExistsMethod(FlatRootExists shape, EnumerateDomain domain, String methodName,
+				boolean decoded) {
+			StringBuilder body = new StringBuilder(2048);
+			body.append("    private void ")
+					.append(methodName)
+					.append("() {\n")
+					.append("        long matchedRoots = 0L;\n")
+					.append("        long lastMatchedRoot = -1L;\n")
+					.append("        boolean matchedAnyRoot = false;\n")
+					.append("        long[] roots = dom")
+					.append(domain.domain)
+					.append(";\n")
+					.append("        int rootOffset = domO")
+					.append(domain.domain)
+					.append(";\n")
+					.append("        int rootLength = domL")
+					.append(domain.domain)
+					.append(";\n")
+					.append("        roots: for (int rootIndex = 0; rootIndex < rootLength; rootIndex++) {\n")
+					.append("            if ((++pollTick & 1023) == 0) { KernelRuntime.checkCancelled(cancel); }\n")
+					.append("            long v")
+					.append(domain.col)
+					.append(" = roots[rootOffset + rootIndex];\n");
+			int sipSite = sipDrivenSite(domain);
+			if (sipSite >= 0) {
+				body.append("            sipDriven").append(sipSite).append("++;\n");
+			}
+			// A domain may contain an unbound sentinel. Keep the ordinary probe's bound-key guard even when an
+			// actual class-extent binding consists solely of valid resource ids.
+			emitFlatExistsNodesDirect(body, shape.exists.pipeline, 0, "            ", decoded, new BitSet());
+			body.append("        }\n")
+					.append("        flatCount = matchedRoots;\n")
+					.append("    }\n\n");
+			return body.toString();
+		}
+
 		private void emitFlatExistsNodesDirect(StringBuilder body, List<Node> nodes, int index, String indent,
 				boolean decoded, BitSet boundColumns) {
 			if (index == nodes.size()) {
-				body.append(indent)
-						.append("matchedRoots++;\n")
-						.append(indent)
-						.append("continue roots;\n");
+				if (flatRootExistsShape.root instanceof EnumerateDomain) {
+					String root = "v" + flatRootExistsShape.rootColumn();
+					body.append(indent)
+							.append("if (KernelHooks.isBoundValue(hooks, ")
+							.append(root)
+							.append(")) {\n")
+							.append(indent)
+							.append("    if (flatOrdered) {\n")
+							.append(indent)
+							.append("        if (!matchedAnyRoot || !(keyHooks == null ? lastMatchedRoot == ")
+							.append(root)
+							.append(" : keyHooks.sameRdfTerm(lastMatchedRoot, ")
+							.append(root)
+							.append("))) {\n")
+							.append(indent)
+							.append("            lastMatchedRoot = ")
+							.append(root)
+							.append(";\n")
+							.append(indent)
+							.append("            matchedAnyRoot = true;\n")
+							.append(indent)
+							.append("            matchedRoots++;\n")
+							.append(indent)
+							.append("        }\n")
+							.append(indent)
+							.append("    } else {\n")
+							.append(indent)
+							.append("        if (flatDistinct == null) flatDistinct = new KernelRuntime.LongHashSet(context.distinctExpected, keyHooks, aggregateMemory, KernelRuntime.cancellationPoll(cancel));\n")
+							.append(indent)
+							.append("        if (flatDistinct.add(")
+							.append(root)
+							.append(")) matchedRoots++;\n")
+							.append(indent)
+							.append("    }\n")
+							.append(indent)
+							.append("}\n");
+				} else {
+					body.append(indent).append("matchedRoots++;\n");
+				}
+				body.append(indent).append("continue roots;\n");
 				return;
 			}
 			Node node = nodes.get(index);
@@ -1062,6 +1173,7 @@ final class LmdbNativeKernelEmitter {
 				emitFlatExistsNodesDirect(body, nodes, index + 1, indent, decoded, nested);
 				return;
 			}
+			emitScalarFilterInputs(body, node, indent);
 			int filterSite = runtimeFilterSite(node);
 			int sipSite = node instanceof FilterInConstants ? sipFilterSite((FilterInConstants) node) : -1;
 			if (filterSite >= 0) {
@@ -1419,6 +1531,10 @@ final class LmdbNativeKernelEmitter {
 				source.append("    private boolean ran;\n")
 						.append("    private boolean flatReturned;\n")
 						.append("    private long flatCount;\n\n");
+				if (flatRootExistsShape.root instanceof EnumerateDomain) {
+					source.append("    private boolean flatOrdered;\n")
+							.append("    private KernelRuntime.LongHashSet flatDistinct;\n\n");
+				}
 				return;
 			}
 			for (int i = 0; i < kernel.columnCount; i++) {
@@ -1685,6 +1801,9 @@ final class LmdbNativeKernelEmitter {
 							.append(kernel.resumable || kernel.boundedOrder ? 0 : Math.max(stride * 64, 64))
 							.append("];\n");
 				}
+			} else {
+				source.append("        flatReturned = false;\n")
+						.append("        flatCount = 0L;\n");
 			}
 			if (flatRootExistsShape == null && kernel.resumable) {
 				source.append("        done = false;\n")
@@ -1907,6 +2026,15 @@ final class LmdbNativeKernelEmitter {
 			}
 			source.append("        hooks = context.hooks;\n")
 					.append("        keyHooks = hooks == null ? null : hooks.keySemantics();\n");
+			if (flatRootExistsShape != null && flatRootExistsShape.root instanceof EnumerateDomain domain) {
+				source.append("        flatOrdered = KernelRuntime.unsignedNondecreasing(dom")
+						.append(domain.domain)
+						.append(", domO")
+						.append(domain.domain)
+						.append(", domL")
+						.append(domain.domain)
+						.append(");\n");
+			}
 			if (kernel.requirements.scans > 0) {
 				source.append("        scanner = context.scanner;\n");
 			}
@@ -2159,6 +2287,9 @@ final class LmdbNativeKernelEmitter {
 			if (isDistinct() && ((Emit) kernel.terminal).alignedCount < ((Emit) kernel.terminal).cols.length) {
 				emitCloseResource(source, "dedup");
 			}
+			if (flatRootExistsShape != null && flatRootExistsShape.root instanceof EnumerateDomain) {
+				emitCloseResource(source, "flatDistinct");
+			}
 			if (kernel.terminal instanceof Aggregate && flatRootExistsShape == null && !streamingGroups()) {
 				Aggregate aggregate = (Aggregate) kernel.terminal;
 				for (int i = 0; i < aggregate.outputs.length; i++) {
@@ -2330,9 +2461,10 @@ final class LmdbNativeKernelEmitter {
 												: "if (!ran) { ran = true; run(); flush(); } return groupSink.fill(rowBuffer, maxRows);")
 										+ " }\n"
 								: "")
-						.append("        if (flatReturned || maxRows <= 0) {\n")
+						.append("        if (closed || flatReturned || maxRows <= 0) {\n")
 						.append("            return 0;\n")
 						.append("        }\n")
+						.append("        if (rowBuffer.length < 1) throw new IllegalArgumentException(\"row buffer too small\");\n")
 						.append("        if (!ran) {\n")
 						.append("            ran = true;\n")
 						.append("            run();\n")
@@ -5047,6 +5179,9 @@ final class LmdbNativeKernelEmitter {
 		 * Renders a filter as a boolean expression over the already-materialized scalar columns.
 		 */
 		private String scalarFilterCondition(Node node) {
+			if (node instanceof FilterResidual residual) {
+				return "hooks.testResidual(" + residual.residualId + ")";
+			}
 			if (node instanceof FilterCompareId) {
 				FilterCompareId filter = (FilterCompareId) node;
 				return filter.left.token() + (filter.negated ? " != " : " == ") + filter.right.token();
@@ -5099,6 +5234,20 @@ final class LmdbNativeKernelEmitter {
 			return valueFilterCondition(filter, args);
 		}
 
+		/** Install every declared residual read before evaluating its callback, regardless of execution shape. */
+		private void emitScalarFilterInputs(StringBuilder body, Node node, String indent) {
+			if (node instanceof FilterResidual residual) {
+				for (int i = 0; i < residual.args.length; i++) {
+					body.append(indent)
+							.append("hooks.residualSlot(")
+							.append(residual.engineSlots[i])
+							.append(", ")
+							.append(residual.args[i].token())
+							.append(");\n");
+				}
+			}
+		}
+
 		private String valueFilterCondition(FilterValue filter, String[] args) {
 			return "vf" + valueFilterMethodId(filter) + "(" + args[0] + ", " + args[1] + ", " + args[2] + ")";
 		}
@@ -5132,6 +5281,7 @@ final class LmdbNativeKernelEmitter {
 		 * the placement.
 		 */
 		private void emitScalarFilterGuard(StringBuilder body, Node node, String nextTemplate, String indent) {
+			emitScalarFilterInputs(body, node, indent);
 			int filterSite = runtimeFilterSite(node);
 			int sipSite = node instanceof FilterInConstants ? sipFilterSite((FilterInConstants) node) : -1;
 			if (filterSite >= 0) {
@@ -10126,41 +10276,8 @@ final class LmdbNativeKernelEmitter {
 					|| node instanceof FilterInConstants
 					|| node instanceof FilterRangeUnsigned || node instanceof FilterDateCompare
 					|| node instanceof LmdbNativeKernelIr.FilterFragmentCompare
-					|| node instanceof FilterValue) {
+					|| node instanceof FilterValue || node instanceof FilterResidual) {
 				emitScalarFilterGuard(body, node, nextTemplate, indent);
-			} else if (node instanceof LmdbNativeKernelIr.FilterResidual) {
-				LmdbNativeKernelIr.FilterResidual residual = (LmdbNativeKernelIr.FilterResidual) node;
-				for (int i = 0; i < residual.args.length; i++) {
-					body.append(indent)
-							.append("hooks.residualSlot(")
-							.append(residual.engineSlots[i])
-							.append(", ")
-							.append(residual.args[i].token())
-							.append(");\n");
-				}
-				int filterSite = runtimeFilterSite(residual);
-				if (filterSite >= 0) {
-					body.append(indent)
-							.append("rfTest")
-							.append(filterSite)
-							.append("++;\n")
-							.append(indent)
-							.append("factorCandidates++;\n");
-				}
-				body.append(indent)
-						.append("if (hooks.testResidual(")
-						.append(residual.residualId)
-						.append(")) {\n");
-				if (filterSite >= 0) {
-					body.append(indent).append("    rfAccept").append(filterSite).append("++;\n");
-				}
-				body.append(next(nextTemplate, indent + "    "))
-						.append(indent)
-						.append("} else {\n");
-				if (filterSite >= 0) {
-					body.append(indent).append("    factorRejected++;\n");
-				}
-				body.append(indent).append("}\n");
 			} else if (node instanceof LeftProbe) {
 				LeftProbe probe = (LeftProbe) node;
 				String a = "a" + probe.adjacency;

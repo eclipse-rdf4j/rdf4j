@@ -16,16 +16,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.edge;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFactorizedQuoteTest.row;
 
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
+
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeFanOutFactsTest.StatsSource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativePackedFtreeQuote.Site;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * The packed f-tree is quoted as its runtime works: roots are enumerated once, every tree edge is bound once per parent
  * lane and its neighbours copied as lanes, cycle-closing edges are intersected per candidate, and lanes are packed
  * once. Only an aggregate counts the lanes; a row consumer instead pays per logical row.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 class LmdbNativePackedFtreeQuoteTest {
 
 	private static final long P1 = 1L, P2 = 2L, P = 7L;
@@ -36,12 +44,15 @@ class LmdbNativePackedFtreeQuoteTest {
 	}
 
 	private static LmdbNativePackedFtree.Plan starPlan(RowState row) {
-		MultiJoinPlan join = new MultiJoinPlan(new PatternPlan[] { edge(S, P1, A, 9_000D), edge(S, P2, B, 9_000D) },
-				new MaskedFilter[0]);
-		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { S, A, B });
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(starJoin(), row, new int[] { S, A, B });
 		assertThat(plan).isNotNull();
 		assertThat(plan.root.slot).isEqualTo(S);
 		return plan;
+	}
+
+	private static MultiJoinPlan starJoin() {
+		return new MultiJoinPlan(new PatternPlan[] { edge(S, P1, A, 9_000D), edge(S, P2, B, 9_000D) },
+				new MaskedFilter[0]);
 	}
 
 	@Test
@@ -70,6 +81,128 @@ class LmdbNativePackedFtreeQuoteTest {
 		assertThat(quote.expected(Feature.GENERATED_ROW)).isZero();
 		// COUNT(DISTINCT ?a): one update per lane of ?a (9000), none per joined row (27000)
 		assertThat(quote.expected(Feature.GROUP_UPDATE)).isEqualTo(9_000D);
+	}
+
+	@Test
+	void siblingGroupKeysChargeTheProjectedProduct() {
+		RowState row = row(star(true));
+		MultiJoinPlan join = starJoin();
+		int[] groups = { A, B };
+		AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, new int[] { A, B });
+		assertThat(plan.root.slot).isEqualTo(S);
+		assertThat(LmdbNativePackedFtree.StructuredGroupLayout.analyze(plan, groups, aggregates)).isNull();
+
+		LmdbNativeCostVector quote = LmdbNativePackedFtree.aggregateQuote(join, row, groups, aggregates).total();
+		// Each of 3000 roots joins 3 A lanes with 3 B lanes. The fallback visits all 27000 projections.
+		assertThat(quote.expected(Feature.GROUP_UPDATE)).isEqualTo(27_000D);
+	}
+
+	@Test
+	void siblingSumArgumentChargesTheProjectedProduct() {
+		assertThat(groupedUpdateEstimate(AggregateSpec.slot("sum", B, false, AggKind.SUM))).isEqualTo(27_000D);
+	}
+
+	@Test
+	void siblingDistinctCountArgumentChargesTheProjectedProduct() {
+		assertThat(groupedUpdateEstimate(AggregateSpec.slot("distinct", B, true, AggKind.COUNT)))
+				.isEqualTo(27_000D);
+	}
+
+	@Test
+	void siblingBoundCountFoldsTheArgumentWithoutProjectingIt() {
+		assertThat(groupedUpdateEstimate(AggregateSpec.slot("count", B, false, AggKind.COUNT))).isEqualTo(9_000D);
+	}
+
+	@Test
+	void independentAggregateDemandsArePricedAsSeparateMarginals() {
+		RowState row = row(star(true));
+		AggregateSpec[] aggregates = { AggregateSpec.slot("count", A, false, AggKind.COUNT),
+				AggregateSpec.slot("sum", B, false, AggKind.SUM) };
+		LmdbNativeCostVector quote = LmdbNativePackedFtree.aggregateQuote(starJoin(), row, new int[] { A }, aggregates)
+				.total();
+		// COUNT folds its bound argument and visits 9000 A groups; SUM visits the 27000 (A,B) projections.
+		assertThat(quote.expected(Feature.GROUP_UPDATE)).isEqualTo(36_000D);
+	}
+
+	@Test
+	void threeSiblingGroupKeysMultiplyAllDemandedBranches() {
+		int c = 3;
+		long p3 = 3L;
+		StatsSource source = star(true).predicate(p3, 3D, 3_000L);
+		NativeSlotLayout slots = new NativeSlotLayout(Map.of("s", S, "a", A, "b", B, "c", c), null);
+		slots.freeze(List.of("s", "a", "b", "c"));
+		RowState row = new RowState(source, slots, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		MultiJoinPlan join = new MultiJoinPlan(new PatternPlan[] { edge(S, P1, A, 9_000D),
+				edge(S, P2, B, 9_000D), edge(S, p3, c, 9_000D) }, new MaskedFilter[0]);
+		int[] groups = { A, B, c };
+		AggregateSpec[] aggregates = { AggregateSpec.star("count") };
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, groups);
+		assertThat(plan.root.slot).isEqualTo(S);
+		assertThat(LmdbNativePackedFtree.StructuredGroupLayout.analyze(plan, groups, aggregates)).isNull();
+		assertThat(LmdbNativePackedFtree.aggregateQuote(join, row, groups, aggregates)
+				.total()
+				.expected(Feature.GROUP_UPDATE)).isEqualTo(81_000D);
+	}
+
+	@Test
+	void nestedDemandIncludesItsAncestorAndMultipliesASibling() {
+		int c = 3;
+		long p3 = 3L;
+		StatsSource source = star(true).predicate(p3, 3D, 9_000L);
+		NativeSlotLayout slots = new NativeSlotLayout(Map.of("s", S, "a", A, "b", B, "c", c), null);
+		slots.freeze(List.of("s", "a", "b", "c"));
+		RowState row = new RowState(source, slots, EmptyBindingSet.getInstance());
+		Arrays.fill(row.slots, LmdbNativeAggregateCompiler.UNKNOWN);
+		row.recomputeBoundMask();
+		MultiJoinPlan join = new MultiJoinPlan(new PatternPlan[] { edge(S, P1, A, 9_000D),
+				edge(S, P2, B, 9_000D), edge(A, p3, c, 27_000D) }, new MaskedFilter[0]);
+		int[] demand = { B, c };
+		LmdbNativePackedFtree.Plan plan = LmdbNativePackedFtree.Planner.plan(join, row, demand);
+		assertThat(plan.root.slot).isEqualTo(S);
+		assertThat(plan.bySlot.get(c).parent.slot).isEqualTo(A);
+		assertThat(LmdbNativePackedFtreeQuote.projectedGroupWork(plan, row, new int[][] { demand }, new int[] { 1 },
+				81_000D).expected(Feature.GROUP_UPDATE)).isEqualTo(81_000D);
+	}
+
+	@Test
+	void structuredPathKeepsItsLaneBasedQuote() {
+		RowState row = row(star(true));
+		int[] groups = { A };
+		AggregateSpec[] aggregates = { AggregateSpec.slot("count", A, false, AggKind.COUNT) };
+		assertThat(LmdbNativePackedFtree.StructuredGroupLayout.analyze(starPlan(row), groups, aggregates)).isNotNull();
+		assertThat(LmdbNativePackedFtree.aggregateQuote(starJoin(), row, groups, aggregates)
+				.total()
+				.expected(Feature.GROUP_UPDATE)).isEqualTo(9_000D);
+	}
+
+	@Test
+	void legacySinkProjectsTheUnionWhenMarginalsAreDisabled() {
+		String property = LmdbNativeKernelIr.FACTOR_MARGINALS_PROPERTY;
+		String previous = System.getProperty(property);
+		try {
+			System.setProperty(property, "false");
+			assertThat(groupedUpdateEstimate(AggregateSpec.slot("count", B, false, AggKind.COUNT)))
+					.isEqualTo(27_000D);
+		} finally {
+			if (previous == null) {
+				System.clearProperty(property);
+			} else {
+				System.setProperty(property, previous);
+			}
+		}
+	}
+
+	private static double groupedUpdateEstimate(AggregateSpec aggregate) {
+		RowState row = row(star(true));
+		int[] groups = { A };
+		AggregateSpec[] aggregates = { aggregate };
+		assertThat(LmdbNativePackedFtree.StructuredGroupLayout.analyze(starPlan(row), groups, aggregates)).isNull();
+		return LmdbNativePackedFtree.aggregateQuote(starJoin(), row, groups, aggregates)
+				.total()
+				.expected(Feature.GROUP_UPDATE);
 	}
 
 	@Test

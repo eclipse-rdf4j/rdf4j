@@ -700,14 +700,39 @@ public class LmdbNativeFactorizedTailAggregationTest {
 			assertThat(findMetric(plan, "nativeStrategyProposalCosts"))
 					.as("all eligible aggregate strategies must reach the common arbiter")
 					.contains("factorizedTail=")
-					.contains("irAggregate=");
-			// On this 20-statement fixture the measured selector prices the sequential group path (about 9 us)
-			// below the compiled aggregate kernel (about 0.2 ms) and the factorized tail (about 2.3 ms), so the
-			// free run executes the sequential path, whose execution path is its physical group representation.
+					.contains("irAggregate=")
+					.contains("nestedLoop=unpriced")
+					.doesNotContain("irAggregate=unpriced");
+			String groupDecision = findMetric(plan, "nativeDecision.GROUP.0");
+			assertThat(groupDecision)
+					.as("the GROUP decision retains each candidate's actual quote and missing-work reason")
+					.contains("winner=irAggregate")
+					.contains("nestedLoop unpriced")
+					.contains("Composite input physical grain is not proved");
 			assertThat(findStrategy(plan))
-					.as("the free run must select the sequential group path on a fixture this small")
-					.isEqualTo("singleSlotGroups");
+					.as("AUTO must choose the compiled aggregate representation on this fixture")
+					.isEqualTo("irAggregate");
+			assertThat(findMetric(plan, "nativeDecisionOutcome")).startsWith("winner=irAggregate");
 			assertThat(JaninoPipelineTestAccess.awaitCompilations(30, TimeUnit.SECONDS)).isTrue();
+
+			List<String> automaticRows = rows(query);
+			assertThat(automaticRows).as("AUTO returns the complete nonempty BindingSet bag").isNotEmpty();
+			String previousNative = System.getProperty(NATIVE_FLAG);
+			List<String> genericRows;
+			try {
+				System.setProperty(NATIVE_FLAG, "false");
+				genericRows = rows(query);
+			} finally {
+				restoreProperty(NATIVE_FLAG, previousNative);
+			}
+			assertThat(automaticRows).as("AUTO must match native-disabled complete bindings")
+					.containsExactlyElementsOf(genericRows);
+
+			List<String> nestedLoopRows = rows(query, "nestedLoop");
+			assertThat(nestedLoopRows).as("forced nestedLoop returns the complete nonempty BindingSet bag")
+					.isNotEmpty()
+					.containsExactlyElementsOf(genericRows);
+
 			// Both specialists stay admitted and executable: forcing each one must run it.
 			assertSameAsGeneric(query, "factorizedTail");
 			assertThat(strategy(query, "factorizedTail")).startsWith("factorizedTail(");

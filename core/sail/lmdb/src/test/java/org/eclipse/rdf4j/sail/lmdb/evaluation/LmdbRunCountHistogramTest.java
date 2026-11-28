@@ -13,26 +13,55 @@
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeAggregateCompiler.UNKNOWN;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 
+import org.assertj.core.api.SoftAssertions;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Resource;
+import org.eclipse.rdf4j.model.Statement;
 import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryEvaluationException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
+import org.eclipse.rdf4j.query.algebra.Group;
 import org.eclipse.rdf4j.query.algebra.TupleExpr;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryBindingSet;
 import org.eclipse.rdf4j.query.algebra.evaluation.QueryEvaluationStep;
@@ -42,24 +71,51 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.FunctionRegistry;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.EvaluationStatistics;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
+import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
+import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
+import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlanTestAccess;
+import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
 import org.eclipse.rdf4j.sail.lmdb.LmdbStore;
+import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
+import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
+import org.eclipse.rdf4j.sail.lmdb.ValueIds;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelRootCountReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelSource;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountWorker;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountWorkspace;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * Query-level tests for the run-count histogram specialization: an outer GROUP BY over an inner single-pattern
  * per-group COUNT collapses into one prefix-run counting scan.
  */
+@ResourceLock(Resources.SYSTEM_PROPERTIES)
 public class LmdbRunCountHistogramTest {
 
 	private static final String EX = "http://example.com/";
 	private static final String RECORD_LITERAL_NOW_URI = EX + "recordLiteralNow";
+	private static final String DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
 	private static final List<Value> RECORDED = new ArrayList<>();
 
 	private static final String OUT_DEGREE_HISTOGRAM = "SELECT ?outDegree (COUNT(?instance) AS ?subjects) WHERE {\n"
@@ -92,10 +148,35 @@ public class LmdbRunCountHistogramTest {
 	File dataDir;
 
 	private SailRepository repository;
+	private String previousParallelEstimate;
+	private String previousParallelThreads;
+	private String previousScanAggregates;
+
+	@BeforeEach
+	public void captureParallelEstimate() {
+		previousParallelEstimate = System.getProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		previousParallelThreads = System.getProperty("rdf4j.lmdb.parallel.threads");
+		previousScanAggregates = System.getProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY);
+	}
 
 	@AfterEach
 	public void tearDown() {
-		System.clearProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		if (previousParallelEstimate == null) {
+			System.clearProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY);
+		} else {
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					previousParallelEstimate);
+		}
+		if (previousParallelThreads == null) {
+			System.clearProperty("rdf4j.lmdb.parallel.threads");
+		} else {
+			System.setProperty("rdf4j.lmdb.parallel.threads", previousParallelThreads);
+		}
+		if (previousScanAggregates == null) {
+			System.clearProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY);
+		} else {
+			System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, previousScanAggregates);
+		}
 		if (repository != null) {
 			repository.shutDown();
 		}
@@ -106,7 +187,7 @@ public class LmdbRunCountHistogramTest {
 		openRepository();
 
 		long before = LmdbNativeRunCountHistogram.RUNS.get();
-		List<String> rows = histogramRows(OUT_DEGREE_HISTOGRAM);
+		List<String> rows = histogramRows(OUT_DEGREE_HISTOGRAM, "runCountHistogram");
 		// s1..s3 have 1 statement, s4 has 2, s5 has 3
 		assertThat(rows).containsExactly("1=3", "2=1", "3=1");
 		assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(before);
@@ -118,57 +199,3461 @@ public class LmdbRunCountHistogramTest {
 
 		AtomicLong rootMerges = metric("ADJACENCY_ROOT_MERGES");
 		long before = rootMerges.get();
-		assertThat(histogramRows(OUT_DEGREE_HISTOGRAM)).containsExactly("1=3", "2=1", "3=1");
+		assertThat(histogramRows(OUT_DEGREE_HISTOGRAM, "runCountHistogram"))
+				.containsExactly("1=3", "2=1", "3=1");
 		assertThat(rootMerges.get()).isGreaterThan(before);
 		try (SailRepositoryConnection connection = repository.getConnection()) {
-			assertThat(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM)
-					.explain(Explanation.Level.Telemetry)
-					.toString())
-							.contains(
-									"nativeAdjacencyOptimizationSummary=grain=ROOT;directions=SOC;pageHeaders=NOT_USED")
-							.contains("source=SOC_ROOT_DOMAIN_MERGE")
-							.contains("setKernel=UNSIGNED_MERGE")
-							.contains("nativeAdjacencyNeighborIdsDecodedActual=0")
-							.contains("nativeAdjacencyContextIdsDecodedActual=0");
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM);
+			query.setForcedLmdbExecutionStrategy("runCountHistogram");
+			assertThat(query.explain(Explanation.Level.Telemetry).toString())
+					.contains("winner=runCountHistogram")
+					.contains("nativeAdjacencyOptimizationSummary=grain=ROOT;directions=SOC;pageHeaders=NOT_USED")
+					.contains("source=SOC_ROOT_DOMAIN_MERGE")
+					.contains("setKernel=UNSIGNED_MERGE")
+					.contains("nativeAdjacencyNeighborIdsDecodedActual=0")
+					.contains("nativeAdjacencyContextIdsDecodedActual=0");
 		}
 	}
 
 	@Test
-	public void histogramMatchesOnLargerRandomDatasetInParallel() throws InterruptedException {
+	public void parallelHistogramInstallsCancellationBeforePhysicalRootFill() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
 		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger physicalFills = new AtomicInteger();
+			SyntheticValueSource source = recordingWorkerCancellationSource(actualSource, workerOpens, physicalFills);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).isNotNull();
+				assertThat(plan.usesAdjacency()).isFalse();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).isNotNull();
+				List<BindingSet> rows = new ArrayList<>();
+				Throwable failure = catchThrowable(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						assertThat(result).as("the parallel recipe opens its real source").isNotNull();
+						while (result.hasNext()) {
+							rows.add(result.next());
+						}
+					}
+				});
+				assertThat(workerOpens.get()).as("real parallel worker sources were acquired").isPositive();
+				assertThat(physicalFills.get()).as("a real worker reached physical root filling").isPositive();
+				assertThat(ledger.usedBytes()).as("worker completion or failure restores the ledger")
+						.isEqualTo(ledgerBefore);
+				assertThat(failure).as("every physical root fill has its owner's cancellation callback installed")
+						.isNull();
+				assertThat(histogramRows(rows)).containsExactlyInAnyOrder("1=3", "2=1", "3=1");
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void parallelHistogramRetainsCursorSetupFailureWhenCloseAlsoFails() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger physicalFills = new AtomicInteger();
+			WorkerCursorFailure injected = new WorkerCursorFailure();
+			SyntheticValueSource source = recordingWorkerCancellationSource(actualSource, workerOpens, physicalFills,
+					injected);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).isNotNull();
+				assertThat(plan.usesAdjacency()).isFalse();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).isNotNull();
+				Throwable failure = catchThrowable(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						assertThat(result).isNotNull();
+						while (result.hasNext()) {
+							result.next();
+						}
+					}
+				});
+				assertThat(workerOpens.get()).as("real parallel worker sources were acquired").isPositive();
+				assertThat(injected.selected).as("a real dense worker cursor reached the failing setter").isTrue();
+				assertThat(injected.closes).as("the selected physical cursor was closed").hasValue(1);
+				assertThat(ledger.usedBytes()).as("all worker memory is released on failure").isEqualTo(ledgerBefore);
+				assertThat(failure).as("the source failure remains primary").isSameAs(injected.setupFailure);
+				assertThat(failure.getSuppressed()).contains(injected.closeFailure);
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void parallelHistogramPropagatesAttemptDeadlineInsidePhysicalRootFill() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger physicalFills = new AtomicInteger();
+			WorkerProbeDeadline deadline = new WorkerProbeDeadline();
+			SyntheticValueSource source = recordingWorkerCancellationSource(actualSource, workerOpens, physicalFills,
+					null, deadline);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).isNotNull();
+				assertThat(plan.usesAdjacency()).isFalse();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).isNotNull();
+				Throwable failure;
+				try (var scope = LmdbNativeProbeDeadline.enter(deadline.value)) {
+					failure = catchThrowable(() -> {
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							assertThat(result).isNotNull();
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					});
+				}
+				assertThat(workerOpens.get()).as("real parallel worker sources were acquired").isPositive();
+				assertThat(physicalFills.get()).as("a physical worker root fill was reached").isPositive();
+				assertThat(deadline.triggeringWorker.get()).as("a physical root fill tripped the attempt deadline")
+						.isNotNull();
+				assertThat(deadline.observed).as("the physical callback observed the attempt deadline").isTrue();
+				assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(ledger.usedBytes()).as("all worker memory is released on deadline").isEqualTo(ledgerBefore);
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void parallelHistogramKeepsLegacyWorkersWhenRetainedReceiptIsUnavailable() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		List<BindingSet> ordinaryRows;
+		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+		assertThat(ordinaryRows).isNotEmpty();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger physicalFills = new AtomicInteger();
+			SyntheticValueSource source = recordingWorkerCancellationSource((NativeLmdbQuerySource) dataset,
+					workerOpens, physicalFills);
+			doAnswer(call -> null).when(source).parallelRootCountReceipt(eq(true), any(Runnable.class));
+			NativeExecutionContext context = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared.quote(row)).as("the unknown retained recipe remains unpriced").isNull();
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(rows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+				assertThat(histogramRows(rows)).containsExactlyInAnyOrder("1=3", "2=1", "3=1");
+				assertThat(workerOpens).hasPositiveValue();
+				assertThat(physicalFills).hasPositiveValue();
+				verify(source).openParallelSources(anyInt());
+				verify(source, never()).openParallelRootCountWorkers(any(), anyInt(), any(Runnable.class));
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void nativeRootLowerBoundPollsDuringPhysicalSeek() throws Exception {
+		assertNativeRootPositioningPolls(true);
+	}
+
+	@Test
+	public void nativeRootWindowPollsDuringInitialPositioning() throws Exception {
+		assertNativeRootPositioningPolls(false);
+	}
+
+	private void assertNativeRootPositioningPolls(boolean lowerBound) throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			long predicate = source.idOf(repository.getValueFactory().createIRI(EX, "knows"));
+			try (NativeProbe probe = source.newProbe(); NativeAdjacency plane = probe.adjacency(predicate, true)) {
+				assertThat(plane).isNotNull();
+				assertThat(plane.keyCount()).isGreaterThan(1L);
+				long key = plane.keyAt(1L);
+				AtomicInteger polls = new AtomicInteger();
+				IllegalStateException cancelled = new IllegalStateException("injected physical seek cancellation");
+				Runnable cancellation = () -> {
+					if (polls.incrementAndGet() == 2) {
+						throw cancelled;
+					}
+				};
+				Throwable observed = catchThrowable(() -> {
+					if (lowerBound) {
+						plane.lowerBoundKeyOrdinal(key, cancellation);
+					} else {
+						try (KeyRunCursor cursor = plane.openKeyRunCursor(1L, plane.keyCount(), cancellation)) {
+							assertThat(cursor).isNotNull();
+						}
+					}
+				});
+				assertThat(observed).as("the physical positioning operation polls beyond entry").isSameAs(cancelled);
+				assertThat(polls).hasValue(2);
+			}
+		}
+	}
+
+	@Test
+	public void parallelRootWorkersRetainTheirSourceViewIndependently() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		boolean datasetClosed = false;
+		try {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(actualSource);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				long predicate = source.idOf(repository.getValueFactory().createIRI(EX, "knows"));
+				long[] expectedRoots = {
+						source.idOf(repository.getValueFactory().createIRI(EX, "s1")),
+						source.idOf(repository.getValueFactory().createIRI(EX, "s2")),
+						source.idOf(repository.getValueFactory().createIRI(EX, "s4")),
+						source.idOf(repository.getValueFactory().createIRI(EX, "s5"))
+				};
+				for (long root : expectedRoots) {
+					assertThat(root).isPositive();
+				}
+				Arrays.sort(expectedRoots);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				var workspace = source.rootCountWorkspace(true);
+				assertThat(workspace).isNotNull();
+				try (var memory = KernelRuntime.AggregateMemory.forLedger(ledger)) {
+					memory.reserve(workspace.fixedBytes() + workspace.planeBytes());
+					var receipt = source.parallelRootCountReceipt(true, row.cancellation::check);
+					assertThat(receipt).as("the compacted snapshot supplies root-worker facts without a producer")
+							.isNotNull();
+					assertThat(receipt.predicates()).isEqualTo(3);
+					assertThat(receipt.roots()).isEqualTo(8L);
+					assertThat(receipt.quads()).isEqualTo(8L);
+					memory.reserve(2L * (2L * workspace.fixedBytes()
+							+ (2L * receipt.predicates() + 1L) * workspace.planeBytes()));
+					var workers = source.openParallelRootCountWorkers(receipt, 2, row.cancellation::check);
+					assertThat(workers).hasSize(2).doesNotContainNull();
+					try {
+						assertThat(workers[0]).isNotSameAs(workers[1]);
+						assertThat(workers[0].viewAuthority()).isSameAs(receipt.viewAuthority());
+						assertThat(workers[1].viewAuthority()).isSameAs(receipt.viewAuthority());
+						assertThat(workers[0].bySubject()).isEqualTo(receipt.bySubject());
+						assertThat(workers[0].explicit()).isEqualTo(receipt.explicit());
+						assertThat(workers[0].predicateCount()).isEqualTo(receipt.predicates());
+						assertThat(workers[1].predicateCount()).isEqualTo(receipt.predicates());
+						for (int i = 0; i < receipt.predicates(); i++) {
+							assertThat(workers[1].predicateAt(i)).isEqualTo(workers[0].predicateAt(i));
+						}
+						dataset.close();
+						datasetClosed = true;
+						try (var firstProbe = workers[0].newProbe(); var secondProbe = workers[1].newProbe()) {
+							assertThat(firstProbe).isNotNull().isNotSameAs(secondProbe);
+							assertThat(secondProbe).isNotNull();
+							assertThat(firstProbe.rootCountViewAuthority()).isSameAs(receipt.viewAuthority());
+							assertThat(secondProbe.rootCountViewAuthority()).isSameAs(receipt.viewAuthority());
+							workers[0].close();
+							assertWorkerKnowsRoots(firstProbe, predicate, expectedRoots);
+							assertWorkerKnowsRoots(secondProbe, predicate, expectedRoots);
+						}
+					} finally {
+						for (var worker : workers) {
+							if (worker != null) {
+								worker.close();
+							}
+						}
+					}
+				}
+				assertThat(ledger.usedBytes()).as("the source-workspace reservation is released")
+						.isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+		} finally {
+			if (!datasetClosed) {
+				dataset.close();
+			}
+		}
+	}
+
+	@Test
+	public void unknownParallelRootProviderDoesNotOpenWorkersOrProbes() throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		Runnable cancellation = () -> {
+		};
+		assertThat(source.parallelRootCountReceipt(true, cancellation)).isNull();
+		var workspace = new NativeLmdbQuerySource.RootCountWorkspace(4096L, 4096L);
+		var receipt = new NativeLmdbQuerySource.ParallelRootCountReceipt(new Object(), true, true, 1, 1, 1L, 1L, 1L,
+				1L, 2L, 2L, workspace);
+		assertThat(source.openParallelRootCountWorkers(receipt, 2, cancellation)).isNull();
+		verify(source, never()).newProbe();
+		verify(source, never()).openParallelSources(anyInt());
+	}
+
+	@Test
+	public void retainedWorkerRangePreservesProbeCloseFailure() throws Exception {
+		Object view = new Object();
+		var receipt = new ParallelRootCountReceipt(view, true, true, 1, 1, 1L, 1L, 1L, 1L, 2L, 4L,
+				new RootCountWorkspace(4096L, 4096L));
+		for (int scenario = 0; scenario < 3; scenario++) {
+			RootCountWorker worker = mock(RootCountWorker.class);
+			RootCountProbe probe = mock(RootCountProbe.class);
+			when(worker.viewAuthority()).thenReturn(view);
+			when(worker.bySubject()).thenReturn(true);
+			when(worker.explicit()).thenReturn(true);
+			when(worker.predicateCount()).thenReturn(1);
+			when(worker.predicateAt(0)).thenReturn(2L);
+			when(worker.newProbe()).thenReturn(probe);
+			when(probe.rootCountViewAuthority()).thenReturn(view);
+			IOException sourceFailure = new IOException("injected retained-plane failure");
+			if (scenario == 1) {
+				when(probe.adjacency(2L, true)).thenThrow(sourceFailure);
+			} else if (scenario == 2) {
+				when(probe.adjacency(2L, true)).thenThrow(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			}
+			IllegalStateException closeFailure = new IllegalStateException("injected retained-probe close failure");
+			doThrow(closeFailure).when(probe).close();
+			Throwable observed = catchThrowable(() -> LmdbAdjacencyRootDomainCursor.openWorker(worker, receipt,
+					new long[] { 2L }, false, 0L, false, 0L, new NativeCancellationToken()));
+			if (scenario == 1) {
+				assertThat(observed).isSameAs(sourceFailure);
+				assertThat(observed.getSuppressed()).contains(closeFailure);
+			} else {
+				assertThat(observed).isSameAs(closeFailure);
+				if (scenario == 2) {
+					assertThat(observed.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				}
+			}
+			verify(probe).close();
+		}
+	}
+
+	@Test
+	public void retainedWorkerCursorClosesAllPlanesAndPreservesCleanupFailures() throws Exception {
+		Object view = new Object();
+		long firstRoot = ValueIds.createId(ValueIds.T_URI, 1L);
+		long secondRoot = ValueIds.createId(ValueIds.T_URI, 2L);
+		long firstPredicate = ValueIds.createId(ValueIds.T_URI, 3L);
+		long secondPredicate = ValueIds.createId(ValueIds.T_URI, 4L);
+		var receipt = new ParallelRootCountReceipt(view, true, true, 2, 1, 2L, 2L, 2L, 1L, firstRoot, secondRoot,
+				new RootCountWorkspace(4096L, 4096L));
+		RootCountWorker worker = mock(RootCountWorker.class);
+		RootCountProbe probe = mock(RootCountProbe.class);
+		NativeAdjacency firstPlane = mock(NativeAdjacency.class);
+		NativeAdjacency secondPlane = mock(NativeAdjacency.class);
+		KeyRunCursor firstCursor = mock(KeyRunCursor.class);
+		KeyRunCursor secondCursor = mock(KeyRunCursor.class);
+		when(worker.viewAuthority()).thenReturn(view);
+		when(worker.bySubject()).thenReturn(true);
+		when(worker.explicit()).thenReturn(true);
+		when(worker.predicateCount()).thenReturn(2);
+		when(worker.predicateAt(0)).thenReturn(firstPredicate);
+		when(worker.predicateAt(1)).thenReturn(secondPredicate);
+		when(worker.newProbe()).thenReturn(probe);
+		when(probe.rootCountViewAuthority()).thenReturn(view);
+		when(probe.adjacency(firstPredicate, true)).thenReturn(firstPlane);
+		when(probe.adjacency(secondPredicate, true)).thenReturn(secondPlane);
+		for (NativeAdjacency plane : List.of(firstPlane, secondPlane)) {
+			when(plane.supportsKeyEnumeration()).thenReturn(true);
+			when(plane.keysImplyNonEmptyRuns()).thenReturn(true);
+			when(plane.orderedKeyRunsWithBoundedOpen()).thenReturn(true);
+			when(plane.keyCount()).thenReturn(1L);
+		}
+		when(firstPlane.openKeyRunCursor(eq(0L), eq(1L), any(Runnable.class))).thenReturn(firstCursor);
+		when(secondPlane.openKeyRunCursor(eq(0L), eq(1L), any(Runnable.class))).thenReturn(secondCursor);
+		stubSingleRoot(firstCursor, firstRoot);
+		stubSingleRoot(secondCursor, secondRoot);
+		IllegalStateException firstFailure = new IllegalStateException("first plane close failed");
+		IllegalStateException secondFailure = new IllegalStateException("second cursor close failed");
+		IllegalStateException lastFailure = new IllegalStateException("probe close failed");
+		doThrow(LmdbNativeProbeDeadlineExceeded.INSTANCE).when(firstCursor).close();
+		doThrow(firstFailure).when(firstPlane).close();
+		doThrow(secondFailure).when(secondCursor).close();
+		doThrow(lastFailure).when(probe).close();
+
+		LmdbAdjacencyRootDomainCursor cursor = LmdbAdjacencyRootDomainCursor.openWorker(worker, receipt,
+				new long[] { firstPredicate, secondPredicate }, false, 0L, false, 0L, new NativeCancellationToken());
+		assertThat(cursor).as("both retained planes and their cursors transfer to the root merge").isNotNull();
+		Throwable failure = catchThrowable(cursor::close);
+		assertThat(failure).as("a real release failure takes precedence over a suppression-disabled deadline")
+				.isSameAs(firstFailure);
+		assertThat(failure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE, secondFailure,
+				lastFailure);
+		verify(firstCursor).close();
+		verify(firstPlane).close();
+		verify(secondCursor).close();
+		verify(secondPlane).close();
+		verify(probe).close();
+	}
+
+	private static void stubSingleRoot(KeyRunCursor cursor, long root) {
+		AtomicBoolean emitted = new AtomicBoolean();
+		doAnswer(fill -> {
+			if (!emitted.compareAndSet(false, true)) {
+				return 0;
+			}
+			long[] roots = fill.getArgument(0);
+			long[] counts = fill.getArgument(2);
+			roots[(int) fill.getArgument(1)] = root;
+			counts[(int) fill.getArgument(3)] = 1L;
+			return 1;
+		}).when(cursor).fillRootCounts(any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+	}
+
+	@Test
+	public void retainedParallelRangePreservesCloseFailureAfterDeadline() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			RetainedRangeCloseFailure injected = new RetainedRangeCloseFailure();
+			SyntheticValueSource source = recordingRetainedRangeCloseFailure((NativeLmdbQuerySource) dataset, injected);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared.quote(row)).as("the exact parallel retained recipe is admitted").isNotNull();
+				Throwable failure;
+				try (var scope = LmdbNativeProbeDeadline.enter(injected.deadline)) {
+					failure = catchThrowable(() -> {
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							if (result != null) {
+								while (result.hasNext()) {
+									result.next();
+								}
+							}
+						}
+					});
+				}
+				assertThat(injected.firstFill).as("a real fallback cursor returned an initial root before transfer")
+						.isTrue();
+				assertThat(injected.secondFill).as("the same cursor filled again after its owner was transferred")
+						.isTrue();
+				assertThat(injected.probeCloses).as("the selected real probe was closed before injecting failure")
+						.hasValue(1);
+				assertThat(failure).as("real probe-close failure is not lost behind the deadline singleton")
+						.isSameAs(injected.closeFailure);
+				assertThat(failure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				try (var restored = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+					assertThat(restored).as("the failed attempt returns its worker grant").isNotNull();
+					assertThat(restored.grantedWorkers()).isEqualTo(2);
+				}
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void retainedDenseCollectorClosesAllPlanesAfterCleanupFailure() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			RetainedDenseCloseFailure injected = new RetainedDenseCloseFailure();
+			SyntheticValueSource source = recordingRetainedDenseCloseFailure((NativeLmdbQuerySource) dataset, injected);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared.quote(row)).as("the exact parallel retained recipe is admitted").isNotNull();
+				Throwable failure = catchThrowable(() -> {
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						if (result != null) {
+							while (result.hasNext()) {
+								result.next();
+							}
+						}
+					}
+				});
+				assertThat(injected.planesOpened).as("the dense collector opened all three real predicate planes")
+						.hasValue(3);
+				assertThat(injected.planesClosed).as("every acquired plane receives an explicit close attempt")
+						.hasValue(3);
+				assertThat(injected.probeCloses).hasValue(1);
+				assertThat(failure).as("a real later cleanup failure takes precedence over the deadline singleton")
+						.isSameAs(injected.planeFailure);
+				assertThat(failure.getSuppressed()).contains(LmdbNativeProbeDeadlineExceeded.INSTANCE,
+						injected.probeFailure);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				try (var restored = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+					assertThat(restored).isNotNull();
+					assertThat(restored.grantedWorkers()).isEqualTo(2);
+				}
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void parallelRootWorkersRejectStaleFactsAndReleasePartialAcquisition() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		var chargedBytes = AdjacencyEngagementTestAccess.adjacencyChargedBytes(store);
+		assertThat(chargedBytes.getAsLong()).as("the retained base is charged before the test").isPositive();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation((NativeLmdbQuerySource) dataset);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				RootCountWorkspace workspace = source.rootCountWorkspace(true);
+				assertThat(workspace).isNotNull();
+				try (var memory = KernelRuntime.AggregateMemory.forLedger(ledger)) {
+					memory.reserve(workspace.fixedBytes() + workspace.planeBytes());
+					ParallelRootCountReceipt receipt = source.parallelRootCountReceipt(true, row.cancellation::check);
+					assertThat(receipt).isNotNull();
+					memory.reserve(2L * (2L * workspace.fixedBytes()
+							+ (2L * receipt.predicates() + 1L) * workspace.planeBytes()));
+					for (StaleRootFact fact : StaleRootFact.values()) {
+						assertThat(source.openParallelRootCountWorkers(staleRootReceipt(receipt, fact), 2,
+								row.cancellation::check)).as("stale " + fact + " declines before workers").isNull();
+					}
+					System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "false");
+					assertThat(source.openParallelRootCountWorkers(receipt, 2, row.cancellation::check))
+							.as("a disabled source declines the previously issued receipt")
+							.isNull();
+					System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+
+					AtomicInteger calibrationPolls = new AtomicInteger();
+					var calibration = source.openParallelRootCountWorkers(receipt, 1,
+							calibrationPolls::incrementAndGet);
+					assertThat(calibration).hasSize(1).doesNotContainNull();
+					calibration[0].close();
+					int afterFirstWorker = calibrationPolls.get();
+					AtomicInteger interruptedPolls = new AtomicInteger();
+					IllegalStateException cancelled = new IllegalStateException("injected partial worker cancellation");
+					assertThatThrownBy(() -> source.openParallelRootCountWorkers(receipt, 2, () -> {
+						if (interruptedPolls.incrementAndGet() == afterFirstWorker + 1) {
+							throw cancelled;
+						}
+					})).as("cancellation after the first retained worker escapes unchanged").isSameAs(cancelled);
+					assertThat(interruptedPolls).hasValue(afterFirstWorker + 1);
+					var retry = source.openParallelRootCountWorkers(receipt, 2, row.cancellation::check);
+					assertThat(retry).hasSize(2).doesNotContainNull();
+					for (var worker : retry) {
+						worker.close();
+					}
+				}
+				assertThat(ledger.usedBytes()).as("all query workspace is released").isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+		}
+		repository.shutDown();
+		repository = null;
+		assertThat(chargedBytes.getAsLong()).as("no partial worker lease retains the closed base").isZero();
+	}
+
+	private enum StaleRootFact {
+		VIEW,
+		DIRECTION,
+		EXPLICIT,
+		PREDICATES,
+		SEGMENTS,
+		ROOTS,
+		QUADS,
+		PAGES,
+		LARGEST,
+		FIRST,
+		LAST,
+		FIXED,
+		PLANE
+	}
+
+	private static ParallelRootCountReceipt staleRootReceipt(ParallelRootCountReceipt receipt, StaleRootFact fact) {
+		Object view = fact == StaleRootFact.VIEW ? new Object() : receipt.viewAuthority();
+		boolean bySubject = fact == StaleRootFact.DIRECTION ? !receipt.bySubject() : receipt.bySubject();
+		boolean explicit = fact == StaleRootFact.EXPLICIT ? !receipt.explicit() : receipt.explicit();
+		int predicates = receipt.predicates() + (fact == StaleRootFact.PREDICATES ? 1 : 0);
+		int segments = fact == StaleRootFact.SEGMENTS
+				? receipt.predicateSegments() == 1 ? 2 : receipt.predicateSegments() - 1
+				: receipt.predicateSegments();
+		long roots = receipt.roots() - (fact == StaleRootFact.ROOTS ? 1L : 0L);
+		long quads = receipt.quads() + (fact == StaleRootFact.QUADS ? 1L : 0L);
+		long pages = fact == StaleRootFact.PAGES
+				? receipt.pages() == receipt.quads() ? receipt.pages() - 1L : receipt.pages() + 1L
+				: receipt.pages();
+		long largest = receipt.largestRootDomain() - (fact == StaleRootFact.LARGEST ? 1L : 0L);
+		long first = receipt.firstRoot() + (fact == StaleRootFact.FIRST ? 1L : 0L);
+		long last = receipt.lastRoot() + (fact == StaleRootFact.LAST ? 1L : 0L);
+		RootCountWorkspace workspace = new RootCountWorkspace(
+				receipt.workspace().fixedBytes() - (fact == StaleRootFact.FIXED ? 1L : 0L),
+				receipt.workspace().planeBytes() - (fact == StaleRootFact.PLANE ? 1L : 0L));
+		return new ParallelRootCountReceipt(view, bySubject, explicit, predicates, segments, roots, quads, pages,
+				largest, first, last, workspace);
+	}
+
+	private static void assertWorkerKnowsRoots(NativeLmdbQuerySource.RootCountProbe probe, long predicate,
+			long[] expectedRoots) throws IOException {
+		try (NativeAdjacency plane = probe.adjacency(predicate, true)) {
+			assertThat(plane).isNotNull();
+			assertThat(plane.keyCount()).isEqualTo(4L);
+			long[] roots = new long[4];
+			long[] counts = new long[4];
+			try (KeyRunCursor cursor = plane.openKeyRunCursor(0L, 4L, () -> {
+			})) {
+				assertThat(cursor).isNotNull();
+				assertThat(cursor.fillRootCounts(roots, 0, counts, 0, roots.length)).isEqualTo(4);
+				assertThat(roots).containsExactly(expectedRoots);
+				assertThat(counts).containsExactly(1L, 1L, 1L, 1L);
+			}
+		}
+	}
+
+	@Test
+	public void preparedParallelHistogramQuotesBeforeSplitOrRootProducer() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 		LmdbStore store = new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
 						.setDirectAdjacencyEnabled(true));
 		repository = new SailRepository(store);
 		Map<String, Integer> degrees = new HashMap<>();
 		Random random = new Random(13);
-		try (SailRepositoryConnection conn = repository.getConnection()) {
-			ValueFactory vf = conn.getValueFactory();
-			java.util.Set<String> seen = new java.util.HashSet<>();
-			conn.begin();
-			for (int i = 0; i < 4000; i++) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory values = connection.getValueFactory();
+			Set<String> seen = new HashSet<>();
+			connection.begin();
+			for (int i = 0; i < 4_000; i++) {
 				String subject = "s" + random.nextInt(900);
 				String predicate = "p" + random.nextInt(4);
 				String object = "o" + random.nextInt(500);
-				if (seen.add(subject + "|" + predicate + "|" + object)) {
-					conn.add(vf.createIRI(EX, subject), vf.createIRI(EX, predicate), vf.createIRI(EX, object));
+				if (seen.add(subject + '|' + predicate + '|' + object)) {
+					connection.add(values.createIRI(EX, subject), values.createIRI(EX, predicate),
+							values.createIRI(EX, object));
 					degrees.merge(subject, 1, Integer::sum);
 				}
 			}
-			conn.commit();
+			connection.commit();
 		}
-		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
-		Map<Long, Long> expected = new HashMap<>();
-		degrees.values().forEach(degree -> expected.merge((long) degree, 1L, Long::sum));
-		List<String> expectedRows = new ArrayList<>();
-		expected.keySet().stream().sorted().forEach(degree -> expectedRows.add(degree + "=" + expected.get(degree)));
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the random graph is folded into a complete same-snapshot adjacency base")
+				.isTrue();
+		List<BindingSet> ordinaryRows;
+		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+		assertThat(ordinaryRows).as("the independent ordinary query produces a nonempty full binding bag").isNotEmpty();
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			AtomicInteger splitOpens = new AtomicInteger();
+			AtomicInteger rootOpens = new AtomicInteger();
+			AtomicInteger prefixOpens = new AtomicInteger();
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger legacyWorkerOpens = new AtomicInteger();
+			SyntheticValueSource source = recordingParallelQuoteSource(actualSource, splitOpens, rootOpens, prefixOpens,
+					workerOpens, legacyWorkerOpens);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				var statistics = source.predicateProjectionStatistics(true, () -> {
+				});
+				assertThat(statistics).isNotNull();
+				assertThat(statistics.predicates()).isEqualTo(4L);
+				assertThat(statistics.quads()).isEqualTo(degrees.values().stream().mapToLong(Integer::longValue).sum());
+				assertThat(statistics.incidences()).isPositive();
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).isNotNull();
+				assertThat(plan.prefixFields()).containsExactly(TripleIndex.SUBJ_IDX);
+				assertThat(plan.usesAdjacency())
+						.as("the existing parallel split planner uses the retained LMDB subject prefix")
+						.isFalse();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(splitOpens).as("preparation never plans split boundaries").hasValue(0);
+				assertThat(rootOpens).as("preparation never opens a physical root producer").hasValue(0);
+				assertThat(prefixOpens).as("preparation never opens prefix rows").hasValue(0);
+				assertThat(workerOpens).as("preparation never opens parallel worker sources").hasValue(0);
+				assertThat(legacyWorkerOpens).as("preparation never opens transaction-backed worker sources")
+						.hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				assertThat(quote).as("the existing parallel SOC recipe has a complete source-bound work receipt")
+						.isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(quote.extra().low(Feature.WORKER_START)).isEqualTo(2D);
+				assertThat(quote.extra().expected(Feature.WORKER_START)).isEqualTo(2D);
+				assertThat(quote.extra().expected(Feature.GROUP_UPDATE))
+						.as("worker and parent updates supplement the common root update")
+						.isEqualTo(2D * statistics.incidences());
+				List<BindingSet> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).as("the prepared parallel recipe opens").isNotNull();
+					while (result.hasNext()) {
+						rows.add(result.next());
+					}
+				}
+				assertThat(rows).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBefore);
+				assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get())
+						.as("the selected producer actually executed parallel SOC ranges")
+						.isGreaterThan(mergesBefore);
+				assertThat(workerOpens).as("execution acquired retained-view root workers").hasPositiveValue();
+				assertThat(legacyWorkerOpens).as("root workers do not acquire parallel LMDB transactions").hasValue(0);
+				assertThat(splitOpens).as("execution does not invoke the LMDB split planner").hasValue(0);
+				assertThat(prefixOpens).as("execution does not fall back to prefix rows").hasValue(0);
+				assertThat(ledger.usedBytes()).as("closing the result returns the query ledger")
+						.isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+		}
+	}
 
-		long before = LmdbNativeRunCountHistogram.RUNS.get();
-		long parallelAdjacencyBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
-		assertThat(histogramRows(OUT_DEGREE_HISTOGRAM)).containsExactlyElementsOf(expectedRows);
-		assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(before);
-		assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get())
-				.isGreaterThan(parallelAdjacencyBefore);
+	@Test
+	public void parallelHistogramSkipsEmptyRootIdGaps() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(false)
+						.setDirectAdjacencyEnabled(false));
+		repository = new SailRepository(store);
+		ValueFactory values = repository.getValueFactory();
+		IRI firstSubject = values.createIRI(EX, "gap-subject-1");
+		IRI secondSubject = values.createIRI(EX, "gap-subject-2");
+		IRI predicate = values.createIRI(EX, "gap-predicate");
+		IRI firstObject = values.createIRI(EX, "gap-object-1");
+		IRI secondObject = values.createIRI(EX, "gap-object-2");
+		List<BindingSet> ordinaryRows;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(firstSubject, predicate, firstObject);
+			connection.add(secondSubject, predicate, secondObject);
+			ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		}
+		assertThat(histogramRows(ordinaryRows)).containsExactly("1=2");
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			for (long lastValue : new long[] { 2L, 1L << 40 }) {
+				SparseRootCounters counters = new SparseRootCounters();
+				SyntheticValueSource source = sparseRootSource(lastValue, firstSubject, ValueIds.T_URI, secondSubject,
+						ValueIds.T_URI, predicate, firstObject, secondObject, counters);
+				NativeExecutionContext context = source.executionContext();
+				try {
+					RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+					var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+					long ledgerBefore = ledger.usedBytes();
+					long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+					LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+							new int[] { TripleIndex.SUBJ_IDX });
+					LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+							new SailDatasetTripleTermSource(values, dataset), null, null, 0L,
+							new EvaluationStatistics(), false);
+					TupleExpr expression = QueryParserUtil
+							.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+							.getTupleExpr();
+					LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN,
+							UNKNOWN, UNKNOWN, "outDegree", "subjects", strategy, expression,
+							new QueryEvaluationContext.Minimal((Dataset) null));
+					NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+					NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+					assertThat(quote).as("the exact two-root retained recipe is fully quoted").isNotNull();
+					assertThat(counters.workerOpens).as("quoting does not open workers").hasValue(0);
+					List<BindingSet> actual = new ArrayList<>();
+					Throwable failure = catchThrowable(() -> {
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							assertThat(result).isNotNull();
+							while (result.hasNext()) {
+								actual.add(result.next());
+							}
+						}
+					});
+					assertThat(failure)
+							.as("finite physical roots do not scan the empty ID space ending at value %s", lastValue)
+							.isNull();
+					assertThat(actual).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+					assertThat(histogramRows(actual)).containsExactly("1=2");
+					assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isGreaterThan(mergesBefore);
+					assertThat(counters.excessEmptyFills).hasValue(0);
+					assertThat(counters.workerOpens).hasPositiveValue();
+					assertThat(counters.workerCloses).hasValue(counters.workerOpens.get());
+					assertThat(counters.probeCloses).hasValue(counters.probeOpens.get());
+					assertThat(counters.cursorCloses).hasValue(counters.cursorOpens.get());
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					if (lastValue == 2L) {
+						// P=1, R=2, B=2, W=2 and K=2: catalog 11, bounded seeks 168, fallback/range/worker
+						// work 32, window loops 10, array clear/output 4, and two dense degree contributions.
+						double physicalEnvelope = 11D + 168D + 32D + 10D + 4D + 2D;
+						assertThat(quote.extra().expected(Feature.INTERPRETED_ROW))
+								.as("the physical envelope includes each dense root comparison and degree update")
+								.isGreaterThanOrEqualTo(physicalEnvelope);
+					} else {
+						assertThat(quote.extra().high(Feature.INTERPRETED_ROW))
+								.as("the work ceiling follows bounded occupied windows rather than the full ID gap")
+								.isLessThan((double) lastValue);
+					}
+				} finally {
+					context.close();
+				}
+			}
+		}
+	}
+
+	@Test
+	public void parallelHistogramPreservesMixedTypeRootAtSplitFence() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(false)
+						.setDirectAdjacencyEnabled(false));
+		repository = new SailRepository(store);
+		ValueFactory values = repository.getValueFactory();
+		Resource firstSubject = values.createBNode("mixed-fence-blank");
+		IRI secondSubject = values.createIRI(EX, "mixed-fence-iri");
+		IRI predicate = values.createIRI(EX, "mixed-fence-predicate");
+		IRI firstObject = values.createIRI(EX, "mixed-fence-object-1");
+		IRI secondObject = values.createIRI(EX, "mixed-fence-object-2");
+		long iriRoot = ValueIds.createId(ValueIds.T_URI, 2L);
+		long splitFence = ValueIds.createId(ValueIds.T_BNODE, 2L);
+		assertThat(ValueIds.getValue(iriRoot)).isEqualTo(ValueIds.getValue(splitFence));
+		assertThat(Long.compareUnsigned(iriRoot, splitFence)).as("the IRI lies below the same-value fence")
+				.isNegative();
+		List<BindingSet> ordinaryRows;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			connection.add(firstSubject, predicate, firstObject);
+			connection.add(secondSubject, predicate, secondObject);
+			ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		}
+		assertThat(histogramRows(ordinaryRows)).containsExactly("1=2");
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			SparseRootCounters counters = new SparseRootCounters();
+			SyntheticValueSource source = sparseRootSource(2L, firstSubject, ValueIds.T_BNODE, secondSubject,
+					ValueIds.T_URI, predicate, firstObject, secondObject, counters);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long fallbacksBefore = LmdbNativeRunCountHistogram.ROOT_MERGE_FALLBACK_RANGES.get();
+				long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+				LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+						new int[] { TripleIndex.SUBJ_IDX });
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(values, dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared.quote(row)).isNotNull();
+				List<BindingSet> actual = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						actual.add(result.next());
+					}
+				}
+				assertThat(actual).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+				assertThat(histogramRows(actual)).containsExactly("1=2");
+				assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isGreaterThan(mergesBefore);
+				assertThat(LmdbNativeRunCountHistogram.ROOT_MERGE_FALLBACK_RANGES.get())
+						.as("the IRI immediately below the blank-node fence is retained by unsigned fallback")
+						.isGreaterThan(fallbacksBefore);
+				assertThat(counters.workerCloses).hasValue(counters.workerOpens.get());
+				assertThat(counters.probeCloses).hasValue(counters.probeOpens.get());
+				assertThat(counters.cursorCloses).hasValue(counters.cursorOpens.get());
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void parallelHistogramMatchesRealMixedIriAndBlankNodeRoots() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true));
+		repository = new SailRepository(store);
+		List<Resource> subjects = new ArrayList<>();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory values = connection.getValueFactory();
+			IRI predicate = values.createIRI(EX, "mixed-real-predicate");
+			IRI object = values.createIRI(EX, "mixed-real-object");
+			connection.begin();
+			for (int index = 0; index < 128; index++) {
+				Resource subject = index % 2 == 0 ? values.createIRI(EX, "mixed-real-iri-" + index)
+						: values.createBNode("mixed-real-blank-" + index);
+				subjects.add(subject);
+				connection.add(subject, predicate, object);
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the real mixed-subject graph is compacted into one source view")
+				.isTrue();
+		List<BindingSet> ordinaryRows;
+		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ordinaryRows = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+		assertThat(histogramRows(ordinaryRows)).containsExactly("1=128");
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			AtomicInteger splitOpens = new AtomicInteger();
+			AtomicInteger rootOpens = new AtomicInteger();
+			AtomicInteger prefixOpens = new AtomicInteger();
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger legacyWorkerOpens = new AtomicInteger();
+			SyntheticValueSource source = recordingParallelQuoteSource((NativeLmdbQuerySource) dataset, splitOpens,
+					rootOpens, prefixOpens, workerOpens, legacyWorkerOpens);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				Set<Integer> actualTypes = new HashSet<>();
+				for (Resource subject : subjects) {
+					long id = source.idOf(subject);
+					assertThat(id).isPositive();
+					actualTypes.add(ValueIds.getIdType(id));
+				}
+				assertThat(actualTypes).containsExactlyInAnyOrder(ValueIds.T_URI, ValueIds.T_BNODE);
+				var receipt = source.parallelRootCountReceipt(true, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.predicates()).isEqualTo(1);
+				assertThat(receipt.roots()).isEqualTo(128L);
+				assertThat(receipt.quads()).isEqualTo(128L);
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+				long fallbacksBefore = LmdbNativeRunCountHistogram.ROOT_MERGE_FALLBACK_RANGES.get();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared.quote(row)).as("the real mixed-type source has a complete parallel quote")
+						.isNotNull();
+				List<BindingSet> actual = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						actual.add(result.next());
+					}
+				}
+				assertThat(actual).containsExactlyInAnyOrderElementsOf(ordinaryRows);
+				assertThat(histogramRows(actual)).containsExactly("1=128");
+				assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isGreaterThan(mergesBefore);
+				assertThat(LmdbNativeRunCountHistogram.ROOT_MERGE_FALLBACK_RANGES.get())
+						.as("mixed physical root kinds reach the unsigned merge fallback")
+						.isGreaterThan(fallbacksBefore);
+				assertThat(workerOpens).hasPositiveValue();
+				assertThat(legacyWorkerOpens).hasValue(0);
+				assertThat(splitOpens).hasValue(0);
+				assertThat(prefixOpens).hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+		}
+	}
+
+	@Test
+	public void appliedOverlayKeepsUnknownReceiptAndFullHistogramBag() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "15");
+		LmdbStore store = new LmdbStore(dataDir,
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+						.setDirectAdjacencyEnabled(true)
+						.setDirectAdjacencyBuildOnStart(false));
+		repository = new SailRepository(store);
+		repository.init();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).as("the empty base is published first").isTrue();
+		AdjacencyEngagementTestAccess.pauseApplier(store, true);
+		try {
+			Random random = new Random(13);
+			Set<String> seen = new HashSet<>();
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory values = connection.getValueFactory();
+				connection.begin();
+				for (int index = 0; index < 4000; index++) {
+					String subject = "s" + random.nextInt(900);
+					String predicate = "p" + random.nextInt(4);
+					String object = "o" + random.nextInt(500);
+					if (seen.add(subject + "|" + predicate + "|" + object)) {
+						connection.add(values.createIRI(EX, subject), values.createIRI(EX, predicate),
+								values.createIRI(EX, object));
+					}
+				}
+				connection.commit();
+			}
+			assertThat(seen).hasSize(3998);
+			AdjacencyEngagementTestAccess.stepPausedApplierThroughHead(store);
+			var overlay = AdjacencyEngagementTestAccess.publicationDomain(store);
+			assertThat(overlay.fullBase()).isTrue();
+			assertThat(overlay.pendingTables()).isZero();
+			assertThat(overlay.overlayGenerations()).isEqualTo(1);
+			assertThat(overlay.summaryLevels()).isEqualTo(1);
+			assertThat(overlay.appliedRevision()).isGreaterThan(overlay.baseRevision())
+					.isEqualTo(overlay.horizonRevision());
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource raw = (NativeLmdbQuerySource) dataset;
+				assertThat(raw.rootCountWorkspace(true)).isNull();
+				assertThat(raw.parallelRootCountReceipt(true, () -> {
+				})).isNull();
+				assertThat(raw.predicateProjectionStatistics(true, () -> {
+				})).isNull();
+				SyntheticValueSource synthetic = SyntheticValueSource.forEvaluation(raw);
+				try (NativeExecutionContext context = synthetic.executionContext()) {
+					assertThat(synthetic.rootCountWorkspace(true)).isNull();
+					assertThat(synthetic.parallelRootCountReceipt(true, () -> {
+					})).isNull();
+				}
+			}
+
+			List<BindingSet> reference;
+			String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+				}
+			}
+			assertThat(reference).isNotEmpty();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+			List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+			List<String> selected = new ArrayList<>();
+			LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+				if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+						&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+					decisions.add(record);
+					selected.add(id);
+				}
+			});
+			List<BindingSet> actual;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				actual = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				LmdbNativeDispatchLoop.observeSelections(null);
+			}
+			assertThat(actual).containsExactlyElementsOf(reference);
+			assertThat(selected).containsExactly("nestedLoop");
+			assertThat(decisions).hasSize(1);
+			var entry = decisions.getFirst()
+					.entries()
+					.stream()
+					.filter(candidate -> candidate.id().equals("runCountHistogram"))
+					.findFirst()
+					.orElseThrow();
+			assertThat(entry.admitted()).isTrue();
+			assertThat(entry.priceable()).as("an applied overlay has no retained-base root receipt").isFalse();
+			assertThat(entry.missingPhysicalWork()).isNotNull();
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+			assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isEqualTo(mergesBefore);
+			assertThat(AdjacencyEngagementTestAccess.publicationDomain(store)).isEqualTo(overlay);
+
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store)).as("the same graph is explicitly compacted")
+					.isTrue();
+			var compacted = AdjacencyEngagementTestAccess.publicationDomain(store);
+			assertThat(compacted.fullBase()).isTrue();
+			assertThat(compacted.pendingTables()).isZero();
+			assertThat(compacted.overlayGenerations()).isZero();
+			assertThat(compacted.summaryLevels()).isZero();
+			assertThat(compacted.baseRevision()).isEqualTo(compacted.appliedRevision());
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource raw = (NativeLmdbQuerySource) dataset;
+				assertThat(raw.rootCountWorkspace(true)).isNotNull();
+				var receipt = raw.parallelRootCountReceipt(true, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.quads()).isEqualTo(3998L);
+			}
+			List<LmdbNativeDecisionRecord> compactDecisions = new ArrayList<>();
+			List<String> compactSelected = new ArrayList<>();
+			LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+				if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+						&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+					compactDecisions.add(record);
+					compactSelected.add(id);
+				}
+			});
+			List<BindingSet> compactRows;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				compactRows = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				LmdbNativeDispatchLoop.observeSelections(null);
+			}
+			assertThat(compactRows).containsExactlyElementsOf(reference);
+			assertThat(compactDecisions).hasSize(1);
+			LmdbNativeDecisionRecord compactDecision = compactDecisions.getFirst();
+			assertThat(compactSelected).containsExactly(compactDecision.winnerId());
+			List<LmdbNativeDecisionRecord.Entry> parallel = compactDecision.entries()
+					.stream()
+					.filter(candidate -> candidate.id().equals("runCountHistogram"))
+					.toList();
+			List<LmdbNativeDecisionRecord.Entry> serial = compactDecision.entries()
+					.stream()
+					.filter(candidate -> candidate.id().equals("runCountHistogram(serial)"))
+					.toList();
+			assertThat(parallel).as("the configured parallel recipe remains a distinct offer").hasSize(1);
+			assertThat(serial).as("the same GROUP also offers its independently certified serial recipe")
+					.hasSize(1);
+			assertThat(parallel.getFirst().priceable()).isTrue();
+			assertThat(serial.getFirst().priceable()).isTrue();
+			assertThat(parallel.getFirst().features().expected(Feature.WORKER_START)).isEqualTo(15D);
+			assertThat(serial.getFirst().features().expected(Feature.WORKER_START)).isZero();
+		} finally {
+			AdjacencyEngagementTestAccess.pauseApplier(store, false);
+		}
+	}
+
+	@Test
+	public void forcedSerialHistogramRespectsPreferenceOrder() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		String previousMaxTasks = System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+		try {
+			openRepository();
+			assertThat(AdjacencyEngagementTestAccess.buildNow((LmdbStore) repository.getSail())).isTrue();
+			List<BindingSet> reference;
+			String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+				}
+			}
+			assertThat(histogramRows(reference)).containsExactly("1=3", "2=1", "3=1");
+			Throwable exactFailure = catchThrowable(() -> assertForcedHistogramRoute("runCountHistogram(serial)",
+					"runCountHistogram(serial)", false, reference));
+			assertThat(exactFailure).as("an explicitly requested serial recipe is forceable").isNull();
+			assertForcedHistogramRoute("runCountHistogram(serial),runCountHistogram", "runCountHistogram(serial)",
+					false, reference);
+			assertForcedHistogramRoute("runCountHistogram,runCountHistogram(serial)", "runCountHistogram", true,
+					reference);
+			assertForcedHistogramRoute("runCountHistogram(unknown),runCountHistogram(serial)",
+					"runCountHistogram(serial)", false, reference);
+			assertForcedHistogramRoute("nestedLoop,runCountHistogram(serial)", "nestedLoop", false, reference);
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			assertForcedHistogramRoute("runCountHistogram(serial)", "runCountHistogram(serial)", false, reference);
+		} finally {
+			if (previousMaxTasks == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.maxTasks");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
+			}
+		}
+	}
+
+	@Test
+	public void automaticParallelPolicyRetainsCheaperSerialHistogram() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "15");
+		String previousMaxTasks = System.setProperty("rdf4j.lmdb.parallel.maxTasks", "15");
+		try {
+			LmdbStore store = new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyEnabled(true));
+			repository = new SailRepository(store);
+			IRI first;
+			IRI second;
+			int fanout = 50_000;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory values = connection.getValueFactory();
+				first = values.createIRI(EX, "fanout-root-1");
+				second = values.createIRI(EX, "fanout-root-2");
+				connection.begin();
+				connection.add(first, first, second);
+				for (int index = 0; index < fanout; index++) {
+					IRI object = values.createIRI(EX, "fanout-object-" + index);
+					connection.add(first, first, object);
+					connection.add(second, first, object);
+				}
+				connection.commit();
+			}
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store)).as("the graph has a complete base").isTrue();
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+				long firstId = source.idOf(first);
+				long secondId = source.idOf(second);
+				assertThat(ValueIds.getIdType(firstId)).isEqualTo(ValueIds.T_URI);
+				assertThat(ValueIds.getIdType(secondId)).isEqualTo(ValueIds.T_URI);
+				assertThat(ValueIds.getValue(secondId)).as("the two physical subject ordinals are adjacent")
+						.isEqualTo(ValueIds.getValue(firstId) + 1L);
+				var receipt = source.parallelRootCountReceipt(true, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.predicates()).isEqualTo(1);
+				assertThat(receipt.roots()).isEqualTo(2L);
+				assertThat(receipt.quads()).isEqualTo(2L * fanout + 1L);
+			}
+			List<BindingSet> reference;
+			String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+				}
+			}
+			assertThat(histogramRows(reference)).containsExactly("50000=1", "50001=1");
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+			long rootMergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+			List<String> selected = new ArrayList<>();
+			LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+				if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+						&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+					decisions.add(record);
+					selected.add(id);
+				}
+			});
+			List<BindingSet> actual;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				actual = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				LmdbNativeDispatchLoop.observeSelections(null);
+			}
+			assertThat(actual).containsExactlyElementsOf(reference);
+			assertThat(decisions).hasSize(1);
+			LmdbNativeDecisionRecord decision = decisions.getFirst();
+			assertThat(selected).as("the unforced outer GROUP keeps the cheaper certified serial recipe: %s", decision)
+					.containsExactly("runCountHistogram(serial)");
+			var parallel = decision.entries()
+					.stream()
+					.filter(entry -> entry.id().equals("runCountHistogram"))
+					.findFirst()
+					.orElseThrow();
+			var serial = decision.entries()
+					.stream()
+					.filter(entry -> entry.id().equals("runCountHistogram(serial)"))
+					.findFirst()
+					.orElseThrow();
+			assertThat(parallel.priceable()).isTrue();
+			assertThat(serial.priceable()).isTrue();
+			assertThat(parallel.features().expected(Feature.WORKER_START)).isEqualTo(15D);
+			assertThat(serial.features().expected(Feature.WORKER_START)).isZero();
+			assertThat(serial.expectedNanos()).isLessThan(parallel.expectedNanos());
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBefore);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isGreaterThan(rootMergesBefore);
+			assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isEqualTo(mergesBefore);
+			assertNestedHistogramVariants();
+			assertForcedHistogramRoute("runCountHistogram", "runCountHistogram", true, reference);
+			assertForcedHistogramRoute("runCountHistogram(serial)", "runCountHistogram(serial)", false, reference);
+			assertForcedHistogramRoute("runCountHistogram(serial),runCountHistogram", "runCountHistogram(serial)",
+					false, reference);
+			assertForcedHistogramRoute("runCountHistogram,runCountHistogram(serial)", "runCountHistogram", true,
+					reference);
+			assertForcedHistogramRoute("nestedLoop,runCountHistogram(serial)", "nestedLoop", false, reference);
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			assertForcedHistogramRoute("runCountHistogram(serial)", "runCountHistogram(serial)", false, reference);
+			try (var restored = LmdbNativeParallelPipelines.tryReserveTasks(false, 15)) {
+				assertThat(restored).as("all 15 task slots are available after the parallel query").isNotNull();
+				assertThat(restored.grantedWorkers()).isEqualTo(15);
+			}
+		} finally {
+			if (previousMaxTasks == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.maxTasks");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
+			}
+		}
+	}
+
+	@Test
+	public void serialRecipeRemainsAvailableWithoutParallelWorkerCapability() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		List<BindingSet> reference;
+		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+		assertThat(histogramRows(reference)).containsExactly("1=3", "2=1", "3=1");
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			AtomicInteger splitOpens = new AtomicInteger();
+			AtomicInteger rootOpens = new AtomicInteger();
+			AtomicInteger prefixOpens = new AtomicInteger();
+			AtomicInteger workerOpens = new AtomicInteger();
+			AtomicInteger legacyWorkerOpens = new AtomicInteger();
+			SyntheticValueSource source = recordingParallelQuoteSource((NativeLmdbQuerySource) dataset, splitOpens,
+					rootOpens, prefixOpens, workerOpens, legacyWorkerOpens);
+			doAnswer(call -> null).when(source).parallelRootCountReceipt(eq(true), any(Runnable.class));
+			try (NativeExecutionContext context = source.executionContext()) {
+				assertThat(source.rootCountWorkspace(true)).isNotNull();
+				assertThat(source.predicateProjectionStatistics(true, () -> {
+				})).isNotNull();
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).isNotNull();
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				List<NativeAggregateAlternative.Variant> variants = histogram.prepareVariants(row, "runCountHistogram",
+						null);
+				assertThat(rootOpens).as("preparation never opens a root producer").hasValue(0);
+				assertThat(workerOpens).hasValue(0);
+				assertThat(legacyWorkerOpens).hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				assertThat(variants).filteredOn(variant -> variant.tag().equals("runCountHistogram"))
+						.singleElement()
+						.satisfies(variant -> assertThat(variant.prepared().quote(row)).isNull());
+				List<NativeAggregateAlternative.Variant> serial = variants.stream()
+						.filter(variant -> variant.tag().equals("runCountHistogram(serial)"))
+						.toList();
+				assertThat(serial).as("a missing parallel-worker capability does not erase a certified serial recipe")
+						.hasSize(1);
+				NativeAggregateAlternative.Prepared prepared = serial.getFirst().prepared();
+				assertThat(prepared.quote(row)).isNotNull();
+				assertThat(prepared.quote(row).input().workEvidence().isComplete()).isTrue();
+				List<BindingSet> actual = new ArrayList<>();
+				try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(result).isNotNull();
+					while (result.hasNext()) {
+						actual.add(result.next());
+					}
+				}
+				assertThat(actual).containsExactlyInAnyOrderElementsOf(reference);
+				assertThat(workerOpens).hasValue(0);
+				assertThat(legacyWorkerOpens).hasValue(0);
+				assertThat(splitOpens).hasValue(0);
+				assertThat(prefixOpens).hasValue(0);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			}
+		}
+	}
+
+	@Test
+	public void softSerialDeclineRetriesThePreparedParallelRecipe() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		String previousMaxTasks = System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+		try {
+			openRepository();
+			LmdbStore store = (LmdbStore) repository.getSail();
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+			List<BindingSet> reference;
+			String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+				}
+			}
+			assertThat(histogramRows(reference)).containsExactly("1=3", "2=1", "3=1");
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				AtomicInteger splitOpens = new AtomicInteger();
+				AtomicInteger rootOpens = new AtomicInteger();
+				AtomicInteger prefixOpens = new AtomicInteger();
+				AtomicInteger workerOpens = new AtomicInteger();
+				AtomicInteger legacyWorkerOpens = new AtomicInteger();
+				SyntheticValueSource source = recordingParallelQuoteSource((NativeLmdbQuerySource) dataset, splitOpens,
+						rootOpens, prefixOpens, workerOpens, legacyWorkerOpens);
+				try (NativeExecutionContext context = source.executionContext()) {
+					LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+							UNKNOWN, UNKNOWN);
+					RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+					var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+					long ledgerBefore = ledger.usedBytes();
+					LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+							new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+							new EvaluationStatistics(), false);
+					TupleExpr expression = QueryParserUtil
+							.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+							.getTupleExpr();
+					LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN,
+							UNKNOWN, UNKNOWN, "outDegree", "subjects", strategy, expression,
+							new QueryEvaluationContext.Minimal((Dataset) null));
+					String preference = "runCountHistogram(serial),runCountHistogram";
+					List<NativeAggregateAlternative.Variant> variants = histogram.prepareVariants(row,
+							"runCountHistogram",
+							preference);
+					assertThat(variants).extracting(NativeAggregateAlternative.Variant::tag)
+							.containsExactly("runCountHistogram", "runCountHistogram(serial)");
+					assertThat(variants).allSatisfy(variant -> assertThat(variant.prepared().quote(row)).isNotNull());
+					AtomicInteger workspaceChecks = new AtomicInteger();
+					doAnswer(call -> workspaceChecks.getAndIncrement() == 0 ? null : call.callRealMethod())
+							.when(source)
+							.rootCountWorkspace(true);
+					LmdbNativeOffers<CloseableIteration<BindingSet>> offers = new LmdbNativeOffers<>(
+							LmdbNativeDecisionPoint.GROUP);
+					offers.offerVariants(() -> variants.stream()
+							.map(variant -> new LmdbNativeStrategyProposal<CloseableIteration<BindingSet>>(
+									() -> variant.prepared().evaluate(EmptyBindingSet.getInstance(), row.cancellation),
+									LmdbNativeWork.UNKNOWN, variant.tag(), () -> {
+									}).withCostQuote(LmdbNativeCostQuote.streaming(
+											LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D), 1D)))
+							.toList());
+					long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+					var selection = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.GROUP, offers.strategies(),
+							null)
+									.forcing(preference)
+									.dispatch(null);
+					assertThat(selection).isNotNull();
+					assertThat(selection.id()).isEqualTo("runCountHistogram");
+					assertThat(selection.record().mode()).isEqualTo("retry forced");
+					assertThat(workspaceChecks).as("the preferred serial opener rechecked its workspace")
+							.hasPositiveValue();
+					List<BindingSet> actual = new ArrayList<>();
+					try (var result = selection.value()) {
+						while (result.hasNext()) {
+							actual.add(result.next());
+						}
+					}
+					assertThat(actual).containsExactlyInAnyOrderElementsOf(reference);
+					assertThat(workerOpens).hasPositiveValue();
+					assertThat(legacyWorkerOpens).hasValue(0);
+					assertThat(splitOpens).hasValue(0);
+					assertThat(prefixOpens).hasValue(0);
+					assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isGreaterThan(mergesBefore);
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					try (var restored = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+						assertThat(restored).isNotNull();
+						assertThat(restored.grantedWorkers()).isEqualTo(2);
+					}
+				}
+			}
+		} finally {
+			if (previousMaxTasks == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.maxTasks");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
+			}
+		}
+	}
+
+	@Test
+	public void preparedParallelHistogramRefusesPressureBeforeWorkersAndRecovers() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		String previousMaxTasks = System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+		LmdbQueryMemoryManager priorMemory = LmdbNativeHashJoin.queryMemoryOverride;
+		LmdbNativeHashJoin.queryMemoryOverride = LmdbQueryMemoryManager.createForTesting(8L << 20, 8L << 20);
+		try {
+			openRepository();
+			LmdbStore store = (LmdbStore) repository.getSail();
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				AtomicInteger splitOpens = new AtomicInteger();
+				AtomicInteger rootOpens = new AtomicInteger();
+				AtomicInteger prefixOpens = new AtomicInteger();
+				AtomicInteger workerOpens = new AtomicInteger();
+				AtomicInteger legacyWorkerOpens = new AtomicInteger();
+				SyntheticValueSource source = recordingParallelQuoteSource((NativeLmdbQuerySource) dataset, splitOpens,
+						rootOpens, prefixOpens, workerOpens, legacyWorkerOpens);
+				NativeExecutionContext context = source.executionContext();
+				try {
+					LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+							UNKNOWN, UNKNOWN);
+					RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+					var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+					long ledgerBefore = ledger.usedBytes();
+					long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+					long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+					LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+							new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+							new EvaluationStatistics(), false);
+					TupleExpr expression = QueryParserUtil
+							.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+							.getTupleExpr();
+					LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN,
+							UNKNOWN, UNKNOWN, "outDegree", "subjects", strategy, expression,
+							new QueryEvaluationContext.Minimal((Dataset) null));
+					NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+					assertThat(prepared.quote(row)).isNotNull();
+					long remaining = ledger.maxBytes() - ledger.usedBytes();
+					assertThat(remaining).isPositive();
+					try (LmdbQueryMemoryManager.Reservation pressure = ledger.reserve(remaining, null)) {
+						assertThat(pressure).isNotNull();
+						long saturated = ledger.usedBytes();
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							assertThat(result).as("workspace pressure refuses the exact recipe").isNull();
+						}
+						assertThat(workerOpens).as("budget refusal precedes source worker acquisition").hasValue(0);
+						assertThat(ledger.usedBytes()).isEqualTo(saturated);
+						try (var available = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+							assertThat(available).as("budget refusal releases its task grant").isNotNull();
+							assertThat(available.grantedWorkers()).isEqualTo(2);
+						}
+					}
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					try (var occupied = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+						assertThat(occupied).isNotNull();
+						assertThat(occupied.grantedWorkers()).isEqualTo(2);
+						try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+							assertThat(result).as("worker-capacity pressure refuses before acquiring a source")
+									.isNull();
+						}
+						assertThat(workerOpens).hasValue(0);
+					}
+					assertThat(splitOpens).hasValue(0);
+					assertThat(prefixOpens).hasValue(0);
+					assertThat(legacyWorkerOpens).hasValue(0);
+					assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+					List<BindingSet> rows = new ArrayList<>();
+					try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						assertThat(result).as("the same prepared receipt recovers after both pressures clear")
+								.isNotNull();
+						while (result.hasNext()) {
+							rows.add(result.next());
+						}
+					}
+					assertThat(histogramRows(rows)).containsExactlyInAnyOrder("1=3", "2=1", "3=1");
+					assertThat(workerOpens).hasPositiveValue();
+					assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBefore);
+					assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isGreaterThan(mergesBefore);
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+					int workersBeforeCancellation = workerOpens.get();
+					row.cancellation.requestCancellation();
+					assertThatThrownBy(() -> prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation))
+							.as("query cancellation propagates before another worker acquisition")
+							.isInstanceOf(KernelQueryCancelledException.class)
+							.satisfies(failure -> assertThat(((KernelQueryCancelledException) failure).origin())
+									.isSameAs(row.cancellation));
+					assertThat(workerOpens).hasValue(workersBeforeCancellation);
+					assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				} finally {
+					context.close();
+				}
+			}
+		} finally {
+			LmdbNativeHashJoin.queryMemoryOverride = priorMemory;
+			if (previousMaxTasks == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.maxTasks");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
+			}
+		}
+	}
+
+	@Test
+	public void preparedHistogramQuotesRealSocRootMergeBeforeExecuting() throws Exception {
+		openRepository();
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			var statistics = source.predicateProjectionStatistics(true, () -> {
+			});
+			assertThat(statistics).as("the explicit evaluation snapshot exposes exact subject-plane metadata")
+					.isNotNull();
+			assertThat(statistics.quads()).isEqualTo(8L);
+			assertThat(statistics.predicates()).isEqualTo(3L);
+
+			LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN, UNKNOWN,
+					UNKNOWN);
+			assertThat(plan).as("the actual snapshot supplies an unbound subject-prefix plan").isNotNull();
+			assertThat(plan.prefixFields()).containsExactly(TripleIndex.SUBJ_IDX);
+
+			NativeSlotLayout layout = NativeSlotLayout.empty();
+			RowState row = new RowState(source, layout,
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+					.getTupleExpr();
+			LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+					UNKNOWN, "outDegree", "subjects", strategy, expression,
+					new QueryEvaluationContext.Minimal((Dataset) null));
+
+			long runsBeforePreparation = LmdbNativeRunCountHistogram.RUNS.get();
+			long rootMergesBeforePreparation = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBeforePreparation = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+			assertThat(prepared).as("the exact histogram recipe is prepared for this source and row").isNotNull();
+			NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+			assertThat(quote).as("the same-view SOC root-merge recipe has a complete physical quote").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete())
+					.as("the prepared root-merge quote is complete")
+					.isTrue();
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBeforePreparation);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get())
+					.isEqualTo(rootMergesBeforePreparation);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get()).isEqualTo(rootsBeforePreparation);
+
+			List<String> rows = new ArrayList<>();
+			try (var result = prepared.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
+					row.cancellation)) {
+				assertThat(result).as("the prepared root-merge recipe opens successfully").isNotNull();
+				while (result.hasNext()) {
+					BindingSet binding = result.next();
+					rows.add(((Literal) binding.getValue("outDegree")).longValue() + "="
+							+ ((Literal) binding.getValue("subjects")).longValue());
+				}
+			}
+			assertThat(rows).containsExactly("1=3", "2=1", "3=1");
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get())
+					.isGreaterThan(rootMergesBeforePreparation);
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBeforePreparation);
+		}
+	}
+
+	@Test
+	public void preparedHistogramQuotesCanonicalSyntheticPhysicalDomain() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+		try (SailDataset dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource source = SyntheticValueSource.forEvaluation(actualSource);
+			NativeExecutionContext context = source.executionContext();
+			try {
+				NativeLmdbQuerySource.PredicateProjectionStatistics statistics = source
+						.predicateProjectionStatistics(true, () -> {
+						});
+				assertThat(statistics).as("the canonical physical backing exposes exact SOC metadata").isNotNull();
+				assertThat(statistics.predicates()).isEqualTo(3L);
+				assertThat(statistics.incidences()).isEqualTo(8L);
+				assertThat(statistics.quads()).isEqualTo(8L);
+				assertThat(statistics.largestRootDomain()).isEqualTo(4L);
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).as("the synthetic evaluation source preserves the real SUBJECT plan").isNotNull();
+				assertThat(plan.prefixFields()).containsExactly(TripleIndex.SUBJ_IDX);
+				assertThat(plan.hasKeyRange()).as("the unbound SUBJECT plan has no key-range restriction").isFalse();
+				assertThat(plan.acceptedContexts()).as("the unbound SUBJECT plan accepts every context").isNull();
+				assertThat(plan.namedContextsOnly()).as("the unbound SUBJECT plan has no named-context restriction")
+						.isFalse();
+
+				RowState row = new RowState(source, NativeSlotLayout.empty(),
+						org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the real physical histogram recipe is prepared").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(quote)
+						.as("canonical physical metadata remains quotable through the synthetic evaluation source")
+						.isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isEqualTo(mergesBefore);
+
+				List<String> rows = new ArrayList<>();
+				try (var result = prepared.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
+						row.cancellation)) {
+					assertThat(result).as("the prepared SOC root-merge recipe opens").isNotNull();
+					while (result.hasNext()) {
+						BindingSet binding = result.next();
+						rows.add(((Literal) binding.getValue("outDegree")).longValue() + "="
+								+ ((Literal) binding.getValue("subjects")).longValue());
+					}
+				}
+				assertThat(rows).containsExactly("1=3", "2=1", "3=1");
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBefore);
+				assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isGreaterThan(mergesBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+			} finally {
+				context.close();
+			}
+			assertThat(context.isClosed()).as("the synthetic evaluation context closes with its ledger").isTrue();
+		}
+	}
+
+	@Test
+	public void automaticHistogramUsesCanonicalSyntheticPhysicalDomain() {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+
+		long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+		long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+		List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+		List<String> selected = new ArrayList<>();
+		LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+			if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+					&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+				decisions.add(record);
+				selected.add(id);
+			}
+		});
+		List<BindingSet> automatic;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			automatic = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+		}
+		assertThat(selected).as("the actual outer group executes the selected ordinary path")
+				.containsExactly("nestedLoop");
+		assertThat(decisions).hasSize(1);
+		LmdbNativeDecisionRecord decision = decisions.getFirst();
+		assertThat(decision.winnerId()).isEqualTo("nestedLoop");
+		LmdbNativeDecisionRecord.Entry histogram = decision.entries()
+				.stream()
+				.filter(entry -> entry.id().equals("runCountHistogram"))
+				.findFirst()
+				.orElseThrow();
+		assertThat(histogram.admitted()).as("the same group admits the histogram candidate").isTrue();
+		assertThat(histogram.priceable()).as("the histogram has a complete comparable physical quote").isTrue();
+		assertThat(histogram.missingPhysicalWork()).isNull();
+		assertThat(histogram.features()).isNotNull();
+		assertThat(decision.entries()).as("a serial policy does not duplicate its AUTO candidate")
+				.noneMatch(entry -> entry.id().equals("runCountHistogram(serial)"));
+		assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+		assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isEqualTo(mergesBefore);
+		assertThat(automatic.stream()
+				.map(bindings -> ((Literal) bindings.getValue("outDegree")).longValue() + "="
+						+ ((Literal) bindings.getValue("subjects")).longValue())
+				.toList())
+						.containsExactly("1=3", "2=1", "3=1");
+
+		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			List<BindingSet> reference = QueryResults.asList(
+					connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			assertThat(automatic).as("the complete ordered RDF bindings match native-disabled evaluation")
+					.containsExactlyElementsOf(reference);
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+	}
+
+	@Test
+	public void automaticSerialRunCountQuoteDoesNotAddAThirdGroupSort() throws Exception {
+		String previousMaxBytes = System.getProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+		String previousNative = System.getProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+		try {
+			System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+			System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY,
+					Long.toString(Long.MAX_VALUE));
+			System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+			System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, "4096");
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "true");
+
+			LmdbStore store = new LmdbStore(new File(dataDir, "run-count-sort-bound"),
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyEnabled(true));
+			repository = new SailRepository(store);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory valueFactory = connection.getValueFactory();
+				IRI predicate = valueFactory.createIRI(EX, "knows");
+				connection.begin();
+				for (int degree = 1; degree <= 128; degree++) {
+					IRI subject = valueFactory.createIRI(EX, "sortRoot-" + degree);
+					for (int edge = 1; edge <= degree; edge++) {
+						connection.add(subject, predicate,
+								valueFactory.createIRI(EX, "sortObject-" + degree + "-" + edge));
+					}
+				}
+				connection.commit();
+			}
+			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+					.as("the direct adjacency applier catches up with all 8,256 statements")
+					.isTrue();
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+					.as("the single-predicate root domain is compacted before quoting")
+					.isTrue();
+
+			double producerSort;
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+				var statistics = source.predicateProjectionStatistics(true, () -> {
+				});
+				assertThat(statistics).as("the compacted snapshot supplies complete single-predicate metadata")
+						.isNotNull();
+				assertThat(statistics.predicates()).isEqualTo(1L);
+				assertThat(statistics.incidences()).isEqualTo(128L);
+				assertThat(statistics.quads()).isEqualTo(8256L);
+				assertThat(statistics.largestRootDomain()).isEqualTo(128L);
+
+				LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN,
+						UNKNOWN, UNKNOWN);
+				assertThat(plan).as("the real source supplies the unrestricted SUBJECT root plan").isNotNull();
+				assertThat(plan.prefixFields()).containsExactly(TripleIndex.SUBJ_IDX);
+				RowState row = new RowState(source, NativeSlotLayout.empty(), EmptyBindingSet.getInstance());
+				try {
+					LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+							new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+							new EvaluationStatistics(), false);
+					TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM,
+							null).getTupleExpr();
+					LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN,
+							UNKNOWN, UNKNOWN, "outDegree", "subjects", strategy, expression,
+							new QueryEvaluationContext.Minimal((Dataset) null));
+					long runsBeforeQuote = LmdbNativeRunCountHistogram.RUNS.get();
+					NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+					assertThat(prepared).as("the real serial SUBJECT producer is admitted from the bounded receipt")
+							.isNotNull();
+					NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+					assertThat(quote).as("the independent producer quote is complete").isNotNull();
+					assertThat(quote.input().workEvidence().isComplete()).isTrue();
+					assertThat(quote.input().rows()).isEqualTo(128D);
+					producerSort = quote.extra().expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N);
+					assertThat(producerSort)
+							.as("two spill-sort/readback pipelines each cover 128 records at seven binary levels")
+							.isEqualTo(2D * 128D * 7D);
+					assertThat(LmdbNativeRunCountHistogram.RUNS.get())
+							.as("preparing and quoting never open the run-count producer")
+							.isEqualTo(runsBeforeQuote);
+				} finally {
+					row.memoryScope.close();
+				}
+			}
+
+			long runsBeforeAutomatic = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBeforeAutomatic = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+			List<String> selected = new ArrayList<>();
+			LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+				if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+						&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+					decisions.add(record);
+					selected.add(id);
+				}
+			});
+			List<BindingSet> automatic;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				automatic = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				LmdbNativeDispatchLoop.observeSelections(null);
+			}
+			assertThat(automatic).as("the actual unforced query returns every histogram group").isNotEmpty();
+			assertThat(automatic).hasSize(128);
+			assertThat(decisions).as("the public query exposes one actual outer GROUP decision").hasSize(1);
+			assertThat(selected).hasSize(1);
+			LmdbNativeDecisionRecord decision = decisions.getFirst();
+			assertThat(decision.mode()).isEqualTo("normal");
+			assertThat(selected.getFirst()).as("the successful opener matches its decision record")
+					.isEqualTo(decision.winnerId());
+			LmdbNativeDecisionRecord.Entry histogramEntry = decision.entries()
+					.stream()
+					.filter(entry -> entry.id().equals("runCountHistogram"))
+					.findFirst()
+					.orElseThrow();
+			assertThat(histogramEntry.admitted()).isTrue();
+			assertThat(histogramEntry.priceable()).isTrue();
+			assertThat(histogramEntry.features()).isNotNull();
+			double groupSort = histogramEntry.features().expected(LmdbNativeCostVector.Feature.SORT_N_LOG2_N);
+
+			if (selected.getFirst().equals("runCountHistogram")) {
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBeforeAutomatic);
+				assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get())
+						.isGreaterThan(mergesBeforeAutomatic);
+			} else {
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBeforeAutomatic);
+				assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get())
+						.isEqualTo(mergesBeforeAutomatic);
+			}
+
+			List<String> expectedRows = new ArrayList<>();
+			for (int degree = 1; degree <= 128; degree++) {
+				expectedRows.add(degree + "=1");
+			}
+			List<String> automaticRows = histogramRows(automatic);
+			assertThat(automaticRows).containsExactlyInAnyOrderElementsOf(expectedRows);
+
+			List<BindingSet> reference;
+			System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+				}
+			}
+			assertThat(reference).as("native-disabled evaluation also produces the complete histogram").hasSize(128);
+			assertThat(automatic).as("all RDF bindings match native-disabled evaluation as a bag")
+					.containsExactlyInAnyOrderElementsOf(reference);
+			assertThat(histogramRows(reference)).containsExactlyInAnyOrderElementsOf(expectedRows);
+			System.out.println("RUN_COUNT_SORT_BOUND roots=128 producerSort=" + producerSort + " groupSort=" + groupSort
+					+ " winner=" + decision.winnerId() + " rows=" + automatic.size() + " bagParity=PASS");
+
+			assertThat(groupSort)
+					.as("the GROUP quote includes the run-count producer's two sorts without adding a generic third sort")
+					.isEqualTo(producerSort);
+		} finally {
+			if (previousMaxBytes == null) {
+				System.clearProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY);
+			} else {
+				System.setProperty(NativeCountGroupStore.MAX_BYTES_PROPERTY, previousMaxBytes);
+			}
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+	}
+
+	@Test
+	public void automaticHistogramSelectsSocMergeForLargeFreshSubject() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		SailRepository nativeDisabledRepository = new SailRepository(new LmdbStore(new File(dataDir, "native-disabled"),
+				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(false)
+						.setDirectAdjacencyEnabled(false)));
+		try {
+			try (SailRepositoryConnection nativeConnection = repository.getConnection();
+					SailRepositoryConnection referenceConnection = nativeDisabledRepository.getConnection()) {
+				List<Statement> originalStatements = QueryResults.asList(
+						nativeConnection.getStatements(null, null, null));
+				assertThat(originalStatements).hasSize(8);
+				referenceConnection.begin();
+				for (Statement statement : originalStatements) {
+					referenceConnection.add(statement);
+				}
+				referenceConnection.commit();
+
+				IRI subject = nativeConnection.getValueFactory().createIRI(EX, "largeFreshSubject");
+				IRI predicate = nativeConnection.getValueFactory().createIRI(EX, "knows");
+				IRI referenceSubject = referenceConnection.getValueFactory().createIRI(EX, "largeFreshSubject");
+				IRI referencePredicate = referenceConnection.getValueFactory().createIRI(EX, "knows");
+				nativeConnection.begin();
+				referenceConnection.begin();
+				for (int index = 0; index < 4096; index++) {
+					nativeConnection.add(subject, predicate,
+							nativeConnection.getValueFactory().createIRI(EX, "largeFreshObject-" + index));
+					referenceConnection.add(referenceSubject, referencePredicate,
+							referenceConnection.getValueFactory().createIRI(EX, "largeFreshObject-" + index));
+				}
+				nativeConnection.commit();
+				referenceConnection.commit();
+			}
+
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+					.as("the updated eight-statement fixture plus large plane is compacted before query planning")
+					.isTrue();
+			try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+				var statistics = source.predicateProjectionStatistics(true, () -> {
+				});
+				assertThat(statistics).as("the compacted subject planes expose exact catalog totals").isNotNull();
+				assertThat(statistics.quads()).isEqualTo(4104L);
+				assertThat(statistics.incidences()).as("the eight original roots plus the fresh subject").isEqualTo(9L);
+				assertThat(statistics.predicates()).isEqualTo(3L);
+			}
+
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long rootMergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			List<BindingSet> automaticBindings;
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				automaticBindings = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			}
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get())
+					.as("the unforced catalog-shaped query runs the histogram producer")
+					.isGreaterThan(runsBefore);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get())
+					.as("AUTO uses the real SOC root-domain merge")
+					.isGreaterThan(rootMergesBefore);
+			List<String> automaticRows = new ArrayList<>();
+			for (BindingSet bindings : automaticBindings) {
+				automaticRows.add(((Literal) bindings.getValue("outDegree")).longValue() + "="
+						+ ((Literal) bindings.getValue("subjects")).longValue());
+			}
+			assertThat(automaticRows).containsExactly("1=3", "2=1", "3=1", "4096=1");
+
+			List<BindingSet> referenceBindings;
+			try (SailRepositoryConnection connection = nativeDisabledRepository.getConnection()) {
+				referenceBindings = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			}
+			assertThat(automaticBindings)
+					.as("the ordered complete RDF binding sequence matches native-disabled evaluation")
+					.containsExactlyElementsOf(referenceBindings);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				String telemetry = connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM)
+						.explain(Explanation.Level.Telemetry)
+						.toString();
+				assertThat(telemetry)
+						.contains("nativeAdjacencyOptimizationSummary=grain=ROOT;directions=SOC;pageHeaders=NOT_USED")
+						.contains("source=SOC_ROOT_DOMAIN_MERGE")
+						.contains("setKernel=UNSIGNED_MERGE");
+			}
+		} finally {
+			nativeDisabledRepository.shutDown();
+		}
+	}
+
+	@Test
+	public void preparedSmallRootDomainUsesResidentCountStorage() throws Exception {
+		assertUnaryCountStoreResidentBoundaryAndBudgetRefusal();
+		SoftAssertions softly = new SoftAssertions();
+		try (PreparedHistogramFixture fixture = preparedHistogramFixture()) {
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			NativeAggregateAlternative.Prepared prepared = fixture.histogram().prepare(fixture.row());
+			assertThat(prepared).as("the real compacted R=8 SUBJECT receipt is prepared").isNotNull();
+			NativeAggregatePhysicalPlan.Work quote = prepared.quote(fixture.row());
+			assertThat(quote).as("the real R=8 receipt has a complete quote").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			LmdbNativeCostVector total = quote.input().operations().plus(quote.extra());
+			assertThat(total.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("resident count storage retains the root scan work")
+					.isPositive();
+			assertThat(total.high(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION))
+					.as("resident count storage retains histogram output work")
+					.isPositive();
+
+			List<String> rows = new ArrayList<>();
+			try (var result = prepared.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
+					fixture.row().cancellation)) {
+				assertThat(result).as("the real resident receipt opens").isNotNull();
+				while (result.hasNext()) {
+					BindingSet binding = result.next();
+					rows.add(((Literal) binding.getValue("outDegree")).longValue() + "="
+							+ ((Literal) binding.getValue("subjects")).longValue());
+				}
+			}
+			assertThat(rows).containsExactly("1=3", "2=1", "3=1");
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBefore);
+			softly.assertThat(prepared.retention())
+					.as("the real R=8 unary count store stays in resident state")
+					.isEqualTo(NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE);
+			softly.assertThat(quote.extra().high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+					.as("the resident R=8 unary count store has no count-store sort ceiling")
+					.isZero();
+
+			try (MockRootCountReceipt boundary = mockBoundedRootCountReceipt(fixture, 16)) {
+				NativeAggregatePhysicalPlan.Work boundaryQuote = boundary.prepared().quote(boundary.row());
+				assertThat(boundaryQuote).as("the valid bounded R=16 receipt is quoted").isNotNull();
+				assertThat(boundaryQuote.input().workEvidence().isComplete()).isTrue();
+				softly.assertThat(boundary.prepared().retention())
+						.as("the exactly 16-record unary domain remains resident")
+						.isEqualTo(NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE);
+				softly.assertThat(boundaryQuote.extra().high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+						.as("the exactly 16-record domain does not retain a spill-sort ceiling")
+						.isZero();
+				verify(boundary.quoteProbe()).close();
+				verify(boundary.unusedProbe(), never()).close();
+				verify(boundary.receiptCatalog(), never()).openKeyRunCursor();
+			}
+		}
+		softly.assertAll();
+	}
+
+	@Test
+	public void preparedLargerRootDomainRetainsSpillCeiling() throws Exception {
+		try (PreparedHistogramFixture fixture = preparedHistogramFixture();
+				MockRootCountReceipt boundary = mockBoundedRootCountReceipt(fixture, 17)) {
+			NativeAggregatePhysicalPlan.Work quote = boundary.prepared().quote(boundary.row());
+			assertThat(quote).as("the valid bounded R=17 receipt is quoted").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			assertThat(boundary.prepared().retention())
+					.as("the larger unary root domain remains spill-capable")
+					.isEqualTo(NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS);
+			assertThat(quote.extra().high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+					.as("the R=17 receipt preserves a positive spill-sort ceiling")
+					.isPositive();
+			assertThat(quote.input().operations().plus(quote.extra()).high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("the larger-domain quote retains bounded spill scan work")
+					.isPositive();
+			verify(boundary.quoteProbe()).close();
+			verify(boundary.unusedProbe(), never()).close();
+			verify(boundary.receiptCatalog(), never()).openKeyRunCursor();
+		}
+	}
+
+	@Test
+	public void preparedResidentCountQuoteIncludesFinalStoreReads() throws Exception {
+		try (PreparedHistogramFixture fixture = preparedHistogramFixture();
+				MockRootCountReceipt boundary = mockBoundedRootCountReceipt(fixture, 16, 136)) {
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = boundary.statistics();
+			assertThat(statistics.predicates()).as("the receipt contains one certified predicate plane").isEqualTo(1L);
+			assertThat(statistics.incidences()).as("the receipt contains 16 distinct roots").isEqualTo(16L);
+			assertThat(statistics.quads()).as("root degrees 1 through 16 total 136 quads").isEqualTo(136L);
+			assertThat(statistics.largestRootDomain()).as("the sole plane contains all 16 roots").isEqualTo(16L);
+
+			NativeAggregateAlternative.Prepared prepared = boundary.prepared();
+			assertThat(prepared).as("the bounded canonical catalog prepares a resident count receipt").isNotNull();
+			assertThat(prepared.retention()).isEqualTo(NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE);
+			NativeAggregatePhysicalPlan.Work quote = prepared.quote(boundary.row());
+			assertThat(quote).as("the resident root-count receipt has a complete quote").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			double minimumScans = 2D * 1D + 5D * 1D + 16D + 16D;
+			assertThat(quote.input().operations().plus(quote.extra()).high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+					.as("the quote includes catalog, page, root, and one final read for each of 16 resident groups")
+					.isGreaterThanOrEqualTo(minimumScans);
+
+			verify(boundary.provider()).hasCanonicalIds();
+			verify(boundary.provider()).rootCountWorkspace(true);
+			verify(boundary.provider()).predicateProjectionStatistics(eq(true), any(Runnable.class));
+			verify(boundary.provider()).newProbe();
+			verify(boundary.quoteProbe()).boundedPredicateSweep(true);
+			verify(boundary.receiptCatalog()).predicateCount();
+			verify(boundary.receiptCatalog()).predicateAt(0);
+			verify(boundary.receiptCatalog()).keyCount();
+			verify(boundary.receiptCatalog()).quadCount();
+			verify(boundary.receiptCatalog()).pageCount();
+			verify(boundary.quoteProbe()).close();
+			verify(boundary.receiptCatalog()).close();
+			verify(boundary.unusedProbe(), never()).close();
+			verify(boundary.receiptCatalog(), never()).openKeyRunCursor();
+		}
+	}
+
+	private void assertUnaryCountStoreResidentBoundaryAndBudgetRefusal() {
+		LmdbQueryMemoryManager manager = LmdbQueryMemoryManager.createForTesting(4096L, 4096L);
+		List<String> encounterOrder = new ArrayList<>();
+		try (var ledger = manager.openQuery();
+				var store = new NativeCountGroupStore(1, new boolean[] { false }, value -> value, null, ledger,
+						4096L)) {
+			for (long key = 16L; key >= 1L; key--) {
+				store.addSingleCount(key, key, 1L);
+			}
+			store.finish();
+			assertThat(store.spilledRecords()).as("exactly 16 distinct unary keys remain in the initial arena")
+					.isZero();
+			assertThat(store.peakRunPaths()).as("resident unary keys create no spill runs").isZero();
+			long[] row = new long[2];
+			while (store.next(row)) {
+				encounterOrder.add(row[0] + "=" + row[1]);
+			}
+			assertThat(ledger.usedBytes()).as("draining the resident store releases its ledger reservation").isZero();
+		}
+		List<String> expected = new ArrayList<>();
+		for (long key = 16L; key >= 1L; key--) {
+			expected.add(key + "=1");
+		}
+		assertThat(encounterOrder).as("resident unary count output preserves first encounter order")
+				.containsExactlyElementsOf(expected);
+		assertThat(manager.usedBytes()).as("closing the standalone query ledger releases every reservation").isZero();
+
+		LmdbQueryMemoryManager pressuredManager = LmdbQueryMemoryManager.createForTesting(4096L, 4096L);
+		try (var ledger = pressuredManager.openQuery()) {
+			var coResidentClaim = ledger.reserve(3000L, null);
+			assertThat(coResidentClaim).as("the query retains a real co-resident operator reservation").isNotNull();
+			assertThat(ledger.usedBytes()).isEqualTo(3000L);
+			try (var store = new NativeCountGroupStore(1, new boolean[] { false }, value -> value, null, ledger,
+					4096L)) {
+				assertThatThrownBy(() -> store.addSingleCount(1L, 1L, 1L))
+						.as("the 1,272-byte initial arena cannot fit in the remaining 1,096 bytes")
+						.isInstanceOf(IllegalStateException.class)
+						.hasMessage("Query memory reservation refused for initial aggregation arena");
+				assertThat(ledger.usedBytes()).as("a refused initial arena leaves the co-resident claim intact")
+						.isEqualTo(3000L);
+			}
+			assertThat(ledger.usedBytes()).as("closing the failed store does not leak or steal the existing claim")
+					.isEqualTo(3000L);
+			coResidentClaim.close();
+			assertThat(ledger.usedBytes()).as("releasing the co-resident claim returns the query ledger to zero")
+					.isZero();
+		}
+		assertThat(pressuredManager.usedBytes()).as("the failed store and query leave no manager reservation")
+				.isZero();
+	}
+
+	private MockRootCountReceipt mockBoundedRootCountReceipt(PreparedHistogramFixture fixture, int roots)
+			throws Exception {
+		return mockBoundedRootCountReceipt(fixture, roots, roots);
+	}
+
+	private MockRootCountReceipt mockBoundedRootCountReceipt(PreparedHistogramFixture fixture, int roots, int quads)
+			throws Exception {
+		NativeLmdbQuerySource provider = mock(NativeLmdbQuerySource.class);
+		NativeProbe quoteProbe = mock(NativeProbe.class);
+		NativeProbe unusedProbe = mock(NativeProbe.class);
+		WildcardAdjacency catalog = mock(WildcardAdjacency.class);
+		NativeLmdbQuerySource.PredicateProjectionStatistics statistics = new NativeLmdbQuerySource.PredicateProjectionStatistics(
+				quads, roots, roots, 1L);
+		when(provider.hasCanonicalIds()).thenReturn(true);
+		when(provider.rootCountWorkspace(true))
+				.thenReturn(new NativeLmdbQuerySource.RootCountWorkspace(4096L, 4096L));
+		when(provider.predicateProjectionStatistics(eq(true), any(Runnable.class))).thenReturn(statistics);
+		when(provider.newProbe()).thenReturn(quoteProbe, unusedProbe);
+		when(quoteProbe.boundedPredicateSweep(true)).thenReturn(catalog);
+		when(catalog.predicateCount()).thenReturn(1);
+		when(catalog.predicateAt(0)).thenReturn(11L);
+		when(catalog.keyCount()).thenReturn((long) roots);
+		when(catalog.quadCount()).thenReturn((long) quads);
+		when(catalog.pageCount()).thenReturn(1L);
+
+		RowState row = new RowState(provider, NativeSlotLayout.empty(),
+				org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+		try {
+			LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+					new int[] { TripleIndex.SUBJ_IDX });
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), fixture.dataset()), null, null, 0L,
+					new EvaluationStatistics(), false);
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+					.getTupleExpr();
+			LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(provider, plan, UNKNOWN, UNKNOWN,
+					UNKNOWN, "outDegree", "subjects", strategy, expression,
+					new QueryEvaluationContext.Minimal((Dataset) null));
+			NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+			return new MockRootCountReceipt(row, prepared, quoteProbe, unusedProbe, catalog, provider, statistics);
+		} catch (Exception | Error failure) {
+			try {
+				row.memoryScope.close();
+			} catch (Throwable closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private record MockRootCountReceipt(RowState row, NativeAggregateAlternative.Prepared prepared,
+			NativeProbe quoteProbe, NativeProbe unusedProbe, WildcardAdjacency receiptCatalog,
+			NativeLmdbQuerySource provider,
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics) implements AutoCloseable {
+		@Override
+		public void close() {
+			row.memoryScope.close();
+		}
+	}
+
+	private enum CertifiedLifecycleMode {
+		SECOND_PLANE_ABSENT,
+		SECOND_PLANE_COUNT_CHANGED,
+		SECOND_PLANE_CAPABILITY_CHANGED,
+		SECOND_CURSOR_ABSENT,
+		INITIAL_FILL_CANCELLATION,
+		INITIAL_FILL_DEADLINE,
+		LATER_PLANE_IO_FAILURE
+	}
+
+	private static final class ResourceCloseTracker {
+		private final String name;
+		private RuntimeException closeFailure;
+		private boolean closed;
+		private int explicitCloseCalls;
+		private int probeCloseCalls;
+
+		private ResourceCloseTracker(String name) {
+			this.name = name;
+		}
+
+		private void explicitClose() {
+			explicitCloseCalls++;
+			close();
+		}
+
+		private void probeClose() {
+			probeCloseCalls++;
+			close();
+		}
+
+		private void close() {
+			if (closed) {
+				return;
+			}
+			closed = true;
+			if (closeFailure != null) {
+				throw closeFailure;
+			}
+		}
+
+		private void assertExplicitlyReleased() {
+			assertThat(explicitCloseCalls).as(name + " is explicitly released by the opener").isGreaterThanOrEqualTo(1);
+			assertThat(closed).as(name + " is closed after probe teardown").isTrue();
+		}
+	}
+
+	private static final class CertifiedLifecycleAttempt implements AutoCloseable {
+		private final RowState row;
+		private final LmdbPrefixRunPlan plan;
+		private final NativeAggregateAlternative.Prepared prepared;
+		private final NativeLmdbQuerySource provider;
+		private final NativeProbe executionProbe;
+		private final NativeAdjacency firstView;
+		private final NativeAdjacency secondView;
+		private final KeyRunCursor firstCursor;
+		private final KeyRunCursor secondCursor;
+		private final ResourceCloseTracker executionCatalogClose;
+		private final ResourceCloseTracker firstViewClose;
+		private final ResourceCloseTracker secondViewClose;
+		private final AtomicInteger executionProbeCloseCalls;
+		private final AtomicReference<Runnable> firstCancellationPoll;
+		private final AtomicInteger firstFillCalls;
+		private final AtomicInteger firstCancellationPollCalls;
+		private final IOException laterPlaneFailure;
+
+		private CertifiedLifecycleAttempt(RowState row, LmdbPrefixRunPlan plan,
+				NativeAggregateAlternative.Prepared prepared, NativeLmdbQuerySource provider,
+				NativeProbe executionProbe,
+				NativeAdjacency firstView, NativeAdjacency secondView, KeyRunCursor firstCursor,
+				KeyRunCursor secondCursor,
+				ResourceCloseTracker executionCatalogClose, ResourceCloseTracker firstViewClose,
+				ResourceCloseTracker secondViewClose,
+				AtomicInteger executionProbeCloseCalls, AtomicReference<Runnable> firstCancellationPoll,
+				AtomicInteger firstFillCalls, AtomicInteger firstCancellationPollCalls, IOException laterPlaneFailure) {
+			this.row = row;
+			this.plan = plan;
+			this.prepared = prepared;
+			this.provider = provider;
+			this.executionProbe = executionProbe;
+			this.firstView = firstView;
+			this.secondView = secondView;
+			this.firstCursor = firstCursor;
+			this.secondCursor = secondCursor;
+			this.executionCatalogClose = executionCatalogClose;
+			this.firstViewClose = firstViewClose;
+			this.secondViewClose = secondViewClose;
+			this.executionProbeCloseCalls = executionProbeCloseCalls;
+			this.firstCancellationPoll = firstCancellationPoll;
+			this.firstFillCalls = firstFillCalls;
+			this.firstCancellationPollCalls = firstCancellationPollCalls;
+			this.laterPlaneFailure = laterPlaneFailure;
+		}
+
+		private void assertExecutionProbeClosed() throws IOException {
+			assertThat(executionProbeCloseCalls.get()).as("the execution probe closes once").isEqualTo(1);
+			verify(executionProbe).boundedPredicateSweep(true);
+			verify(executionProbe).close();
+		}
+
+		private void assertNoPrefixRetry() throws IOException {
+			verify(provider, never()).prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true);
+		}
+
+		@Override
+		public void close() {
+			row.memoryScope.close();
+		}
+	}
+
+	private CertifiedLifecycleAttempt certifiedLifecycleAttempt(PreparedHistogramFixture backing,
+			CertifiedLifecycleMode mode, RuntimeException firstViewCloseFailure) throws Exception {
+		NativeLmdbQuerySource provider = mock(NativeLmdbQuerySource.class);
+		NativeProbe quoteProbe = mock(NativeProbe.class);
+		NativeProbe executionProbe = mock(NativeProbe.class);
+		WildcardAdjacency quoteCatalog = mock(WildcardAdjacency.class);
+		WildcardAdjacency executionCatalog = mock(WildcardAdjacency.class);
+		NativeAdjacency firstView = mock(NativeAdjacency.class);
+		NativeAdjacency secondView = mock(NativeAdjacency.class);
+		KeyRunCursor firstCursor = mock(KeyRunCursor.class);
+		KeyRunCursor secondCursor = mock(KeyRunCursor.class);
+		ResourceCloseTracker quoteCatalogClose = new ResourceCloseTracker("quote catalog");
+		ResourceCloseTracker executionCatalogClose = new ResourceCloseTracker("execution catalog");
+		ResourceCloseTracker firstViewClose = new ResourceCloseTracker("first retained plane view");
+		ResourceCloseTracker secondViewClose = new ResourceCloseTracker("second retained plane view");
+		List<ResourceCloseTracker> quoteOwnedResources = new ArrayList<>();
+		List<ResourceCloseTracker> executionOwnedResources = new ArrayList<>();
+		AtomicInteger quoteProbeCloseCalls = new AtomicInteger();
+		AtomicInteger executionProbeCloseCalls = new AtomicInteger();
+		AtomicReference<Runnable> firstCancellationPoll = new AtomicReference<>();
+		AtomicReference<NativeCancellationToken> lifecycleCancellation = new AtomicReference<>();
+		AtomicInteger firstFillCalls = new AtomicInteger();
+		AtomicInteger firstCancellationPollCalls = new AtomicInteger();
+		IOException laterPlaneFailure = new IOException("later predicate plane is unavailable");
+		firstViewClose.closeFailure = firstViewCloseFailure;
+
+		trackClose(quoteCatalog, quoteCatalogClose);
+		trackClose(executionCatalog, executionCatalogClose);
+		trackClose(firstView, firstViewClose);
+		trackClose(secondView, secondViewClose);
+		trackProbeClose(quoteProbe, quoteProbeCloseCalls, quoteOwnedResources);
+		trackProbeClose(executionProbe, executionProbeCloseCalls, executionOwnedResources);
+		when(provider.hasCanonicalIds()).thenReturn(true);
+		when(provider.rootCountWorkspace(true))
+				.thenReturn(new NativeLmdbQuerySource.RootCountWorkspace(4096L, 4096L));
+		when(provider.predicateProjectionStatistics(eq(true), any(Runnable.class)))
+				.thenReturn(new NativeLmdbQuerySource.PredicateProjectionStatistics(2L, 2L, 1L, 2L));
+		when(provider.newProbe()).thenReturn(quoteProbe, executionProbe);
+		when(quoteProbe.boundedPredicateSweep(true)).thenAnswer(invocation -> {
+			quoteOwnedResources.add(quoteCatalogClose);
+			return quoteCatalog;
+		});
+		when(executionProbe.boundedPredicateSweep(true)).thenAnswer(invocation -> {
+			executionOwnedResources.add(executionCatalogClose);
+			return executionCatalog;
+		});
+		stubCertifiedLifecycleCatalog(quoteCatalog);
+		stubCertifiedLifecycleCatalog(executionCatalog);
+
+		when(firstView.supportsKeyEnumeration()).thenReturn(true);
+		when(firstView.keysImplyNonEmptyRuns()).thenReturn(true);
+		when(firstView.orderedKeyRunsWithBoundedOpen()).thenReturn(true);
+		when(firstView.keyCount()).thenReturn(1L);
+		when(firstView.pageCount()).thenReturn(1L);
+		when(firstView.openKeyRunCursor(0L, 1L)).thenReturn(firstCursor);
+		when(secondView.supportsKeyEnumeration()).thenReturn(true);
+		when(secondView.keysImplyNonEmptyRuns()).thenReturn(true);
+		when(secondView.orderedKeyRunsWithBoundedOpen())
+				.thenReturn(mode != CertifiedLifecycleMode.SECOND_PLANE_CAPABILITY_CHANGED);
+		when(secondView.keyCount())
+				.thenReturn(mode == CertifiedLifecycleMode.SECOND_PLANE_COUNT_CHANGED ? 2L : 1L);
+		when(secondView.pageCount()).thenReturn(1L);
+		when(secondView.openKeyRunCursor(0L, 1L))
+				.thenReturn(mode == CertifiedLifecycleMode.SECOND_CURSOR_ABSENT ? null : secondCursor);
+		doAnswer(invocation -> {
+			firstCancellationPoll.set(invocation.getArgument(0));
+			return null;
+		}).when(firstCursor).cancellationPoll(any(Runnable.class));
+		if (mode == CertifiedLifecycleMode.INITIAL_FILL_CANCELLATION) {
+			doAnswer(invocation -> {
+				firstFillCalls.incrementAndGet();
+				Runnable poll = firstCancellationPoll.get();
+				assertThat(poll).as("the first cursor receives its installed cancellation callback").isNotNull();
+				firstCancellationPollCalls.incrementAndGet();
+				lifecycleCancellation.get().requestCancellation();
+				poll.run();
+				return 0;
+			}).when(firstCursor).fillRootCounts(any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+		}
+		doAnswer(invocation -> {
+			executionOwnedResources.add(firstViewClose);
+			return firstView;
+		}).when(executionProbe).adjacency(11L, true);
+		switch (mode) {
+		case SECOND_PLANE_ABSENT -> doAnswer(invocation -> null)
+				.when(executionProbe)
+				.adjacency(12L, true);
+		case LATER_PLANE_IO_FAILURE -> doAnswer(invocation -> {
+			throw laterPlaneFailure;
+		}).when(executionProbe).adjacency(12L, true);
+		default -> doAnswer(invocation -> {
+			executionOwnedResources.add(secondViewClose);
+			return secondView;
+		}).when(executionProbe).adjacency(12L, true);
+		}
+
+		RowState row = new RowState(provider, NativeSlotLayout.empty(),
+				org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+		lifecycleCancellation.set(row.cancellation);
+		try {
+			LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+					new int[] { TripleIndex.SUBJ_IDX });
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), backing.dataset()), null, null, 0L,
+					new EvaluationStatistics(), false);
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+					.getTupleExpr();
+			LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(provider, plan, UNKNOWN, UNKNOWN,
+					UNKNOWN, "outDegree", "subjects", strategy, expression,
+					new QueryEvaluationContext.Minimal((Dataset) null));
+			NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+			assertThat(prepared).as("the complete bounded metadata creates a prepared receipt").isNotNull();
+			NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+			assertThat(quote).as("the prepared receipt has a complete physical quote").isNotNull();
+			assertThat(quote.input().workEvidence().isComplete()).isTrue();
+			assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+					.as("prepare releases its temporary workspace reservation")
+					.isZero();
+			verify(quoteProbe).close();
+			quoteCatalogClose.assertExplicitlyReleased();
+			return new CertifiedLifecycleAttempt(row, plan, prepared, provider, executionProbe,
+					firstView, secondView, firstCursor, secondCursor, executionCatalogClose, firstViewClose,
+					secondViewClose, executionProbeCloseCalls, firstCancellationPoll, firstFillCalls,
+					firstCancellationPollCalls, laterPlaneFailure);
+		} catch (Exception | Error failure) {
+			try {
+				row.memoryScope.close();
+			} catch (Throwable closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private static void stubCertifiedLifecycleCatalog(WildcardAdjacency catalog) {
+		when(catalog.predicateCount()).thenReturn(2);
+		when(catalog.predicateAt(0)).thenReturn(11L);
+		when(catalog.predicateAt(1)).thenReturn(12L);
+		when(catalog.keyCount()).thenReturn(1L, 1L);
+		when(catalog.quadCount()).thenReturn(1L, 1L);
+		when(catalog.pageCount()).thenReturn(1L, 1L);
+	}
+
+	private static void trackClose(WildcardAdjacency resource, ResourceCloseTracker tracker) {
+		doAnswer(invocation -> {
+			tracker.explicitClose();
+			return null;
+		}).when(resource).close();
+	}
+
+	private static void trackClose(NativeAdjacency resource, ResourceCloseTracker tracker) {
+		doAnswer(invocation -> {
+			tracker.explicitClose();
+			return null;
+		}).when(resource).close();
+	}
+
+	private static void trackProbeClose(NativeProbe probe, AtomicInteger closeCalls,
+			List<ResourceCloseTracker> ownedResources) {
+		doAnswer(invocation -> {
+			closeCalls.incrementAndGet();
+			RuntimeException firstFailure = null;
+			for (ResourceCloseTracker resource : ownedResources) {
+				try {
+					resource.probeClose();
+				} catch (RuntimeException failure) {
+					if (firstFailure == null) {
+						firstFailure = failure;
+					} else if (firstFailure != failure) {
+						firstFailure.addSuppressed(failure);
+					}
+				}
+			}
+			if (firstFailure != null) {
+				throw firstFailure;
+			}
+			return null;
+		}).when(probe).close();
+	}
+
+	@Test
+	public void preparedCertifiedReceiptDeclinesMissingOrChangedLaterPlanesWithCleanup() throws Exception {
+		try (PreparedHistogramFixture backing = preparedHistogramFixture()) {
+			for (CertifiedLifecycleMode mode : List.of(CertifiedLifecycleMode.SECOND_PLANE_ABSENT,
+					CertifiedLifecycleMode.SECOND_PLANE_COUNT_CHANGED,
+					CertifiedLifecycleMode.SECOND_PLANE_CAPABILITY_CHANGED)) {
+				try (CertifiedLifecycleAttempt attempt = certifiedLifecycleAttempt(backing, mode, null)) {
+					var ledger = attempt.row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+					long ledgerBefore = ledger.usedBytes();
+					long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+					long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+					long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+					try (var result = attempt.prepared.evaluate(
+							org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), attempt.row.cancellation)) {
+						assertThat(result).as(mode + " declines before opening a root cursor").isNull();
+					}
+					assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+					assertThat(ledger.usedBytes()).as(mode + " releases query workspace after refusal")
+							.isEqualTo(ledgerBefore);
+
+					attempt.executionCatalogClose.assertExplicitlyReleased();
+					attempt.firstViewClose.assertExplicitlyReleased();
+					if (mode == CertifiedLifecycleMode.SECOND_PLANE_ABSENT) {
+						assertThat(attempt.secondViewClose.closed)
+								.as("the absent second view is never acquired or closed")
+								.isFalse();
+						verify(attempt.executionProbe).adjacency(12L, true);
+					} else {
+						attempt.secondViewClose.assertExplicitlyReleased();
+					}
+					verify(attempt.firstView, never()).openKeyRunCursor(0L, 1L);
+					verify(attempt.secondView, never()).openKeyRunCursor(0L, 1L);
+					verify(attempt.firstCursor, never()).fillRootCounts(
+							any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+					verify(attempt.secondCursor, never()).fillRootCounts(
+							any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+					attempt.assertExecutionProbeClosed();
+					attempt.assertNoPrefixRetry();
+				}
+			}
+		}
+	}
+
+	@Test
+	public void preparedCertifiedReceiptClosesFirstCursorWhenSecondCursorDeclines() throws Exception {
+		try (PreparedHistogramFixture backing = preparedHistogramFixture();
+				CertifiedLifecycleAttempt attempt = certifiedLifecycleAttempt(backing,
+						CertifiedLifecycleMode.SECOND_CURSOR_ABSENT, null)) {
+			var ledger = attempt.row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBefore = ledger.usedBytes();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			try (var result = attempt.prepared.evaluate(
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), attempt.row.cancellation)) {
+				assertThat(result).as("a later cursor refusal declines the exact root-count opener").isNull();
+			}
+			assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+			assertThat(ledger.usedBytes()).as("the failed two-plane open releases its workspace")
+					.isEqualTo(ledgerBefore);
+
+			attempt.executionCatalogClose.assertExplicitlyReleased();
+			attempt.firstViewClose.assertExplicitlyReleased();
+			attempt.secondViewClose.assertExplicitlyReleased();
+			verify(attempt.firstView).openKeyRunCursor(0L, 1L);
+			verify(attempt.secondView).openKeyRunCursor(0L, 1L);
+			verify(attempt.firstCursor).close();
+			verify(attempt.secondCursor, never()).close();
+			verify(attempt.firstCursor, never()).fillRootCounts(
+					any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+			verify(attempt.secondCursor, never()).fillRootCounts(
+					any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+			attempt.assertExecutionProbeClosed();
+			attempt.assertNoPrefixRetry();
+		}
+	}
+
+	@Test
+	public void preparedCertifiedReceiptPropagatesCancellationDuringInitialFill() throws Exception {
+		try (PreparedHistogramFixture backing = preparedHistogramFixture();
+				CertifiedLifecycleAttempt attempt = certifiedLifecycleAttempt(backing,
+						CertifiedLifecycleMode.INITIAL_FILL_CANCELLATION, null)) {
+			var ledger = attempt.row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBefore = ledger.usedBytes();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			assertThatThrownBy(() -> attempt.prepared.evaluate(
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), attempt.row.cancellation))
+							.as("cancellation requested from the first initial-fill callback propagates")
+							.isInstanceOf(KernelQueryCancelledException.class)
+							.satisfies(failure -> assertThat(((KernelQueryCancelledException) failure).origin())
+									.isSameAs(attempt.row.cancellation));
+			assertThat(attempt.firstCancellationPoll.get()).as("the opener installed the cancellation callback")
+					.isNotNull();
+			assertThat(attempt.firstFillCalls.get()).as("cancellation is requested by the actual initial root fill")
+					.isEqualTo(1);
+			assertThat(attempt.firstCancellationPollCalls.get())
+					.as("the installed callback is observed during that fill")
+					.isEqualTo(1);
+			assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+			assertThat(ledger.usedBytes()).as("cancellation releases all query workspace").isEqualTo(ledgerBefore);
+
+			attempt.executionCatalogClose.assertExplicitlyReleased();
+			attempt.firstViewClose.assertExplicitlyReleased();
+			attempt.secondViewClose.assertExplicitlyReleased();
+			verify(attempt.firstCursor).cancellationPoll(any(Runnable.class));
+			verify(attempt.firstCursor).close();
+			verify(attempt.secondCursor).close();
+			verify(attempt.secondCursor, never()).fillRootCounts(
+					any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+			attempt.assertExecutionProbeClosed();
+			attempt.assertNoPrefixRetry();
+		}
+	}
+
+	@Test
+	public void preparedCertifiedReceiptPropagatesAttemptDeadlineDuringInitialFill() throws Exception {
+		try (PreparedHistogramFixture backing = preparedHistogramFixture();
+				CertifiedLifecycleAttempt attempt = certifiedLifecycleAttempt(backing,
+						CertifiedLifecycleMode.INITIAL_FILL_DEADLINE, null)) {
+			var ledger = attempt.row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBefore = ledger.usedBytes();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			AtomicBoolean fillReached = new AtomicBoolean();
+			doAnswer(invocation -> {
+				fillReached.set(true);
+				deadline.trip();
+				Runnable poll = attempt.firstCancellationPoll.get();
+				assertThat(poll).as("the first root cursor receives its physical callback").isNotNull();
+				poll.run();
+				throw new AssertionError("initial root fill did not observe the active attempt deadline");
+			}).when(attempt.firstCursor)
+					.fillRootCounts(
+							any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+			Throwable failure;
+			try (var scope = LmdbNativeProbeDeadline.enter(deadline)) {
+				failure = catchThrowable(() -> attempt.prepared.evaluate(EmptyBindingSet.getInstance(),
+						attempt.row.cancellation));
+			}
+			assertThat(fillReached).as("the first root cursor reached its initial fill").isTrue();
+			assertThat(failure).isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+			assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+			assertThat(ledger.usedBytes()).as("deadline releases all query workspace").isEqualTo(ledgerBefore);
+			attempt.firstViewClose.assertExplicitlyReleased();
+			attempt.secondViewClose.assertExplicitlyReleased();
+			verify(attempt.firstCursor).close();
+			verify(attempt.secondCursor).close();
+			attempt.assertExecutionProbeClosed();
+			attempt.assertNoPrefixRetry();
+		}
+	}
+
+	@Test
+	public void preparedCertifiedReceiptPreservesPrimaryAndCleanupFailures() throws Exception {
+		RuntimeException closeFailure = new IllegalStateException("first retained view close failed");
+		try (PreparedHistogramFixture backing = preparedHistogramFixture()) {
+			try (CertifiedLifecycleAttempt attempt = certifiedLifecycleAttempt(backing,
+					CertifiedLifecycleMode.LATER_PLANE_IO_FAILURE, closeFailure)) {
+				var ledger = attempt.row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+				long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+				assertThatThrownBy(() -> attempt.prepared.evaluate(
+						org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), attempt.row.cancellation))
+								.isInstanceOf(QueryEvaluationException.class)
+								.satisfies(failure -> {
+									assertThat(failure.getCause()).isSameAs(attempt.laterPlaneFailure);
+									assertThat(attempt.laterPlaneFailure.getSuppressed()).contains(closeFailure);
+								});
+				assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+				assertThat(ledger.usedBytes()).as("the failed later-plane open releases its workspace")
+						.isEqualTo(ledgerBefore);
+				attempt.executionCatalogClose.assertExplicitlyReleased();
+				attempt.firstViewClose.assertExplicitlyReleased();
+				verify(attempt.executionProbe).adjacency(11L, true);
+				verify(attempt.executionProbe).adjacency(12L, true);
+				verify(attempt.firstView, never()).openKeyRunCursor(0L, 1L);
+				assertThat(attempt.secondViewClose.closed).as("IO occurs before acquiring the second plane view")
+						.isFalse();
+				verify(attempt.firstCursor, never()).fillRootCounts(
+						any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+				attempt.assertExecutionProbeClosed();
+				attempt.assertNoPrefixRetry();
+			}
+
+			RuntimeException cleanRefusalCloseFailure = new IllegalStateException("clean refusal cleanup failed");
+			try (CertifiedLifecycleAttempt attempt = certifiedLifecycleAttempt(backing,
+					CertifiedLifecycleMode.SECOND_PLANE_ABSENT, cleanRefusalCloseFailure)) {
+				var ledger = attempt.row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+				long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+				assertThatThrownBy(() -> attempt.prepared.evaluate(
+						org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), attempt.row.cancellation))
+								.as("a cleanup failure during a clean decline remains observable")
+								.isSameAs(cleanRefusalCloseFailure);
+				assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+				assertThat(ledger.usedBytes()).as("cleanup failure still releases all query workspace")
+						.isEqualTo(ledgerBefore);
+				attempt.executionCatalogClose.assertExplicitlyReleased();
+				attempt.firstViewClose.assertExplicitlyReleased();
+				assertThat(attempt.secondViewClose.closed).as("the absent plane was never acquired").isFalse();
+				verify(attempt.executionProbe).adjacency(12L, true);
+				verify(attempt.firstView, never()).openKeyRunCursor(0L, 1L);
+				verify(attempt.firstCursor, never()).fillRootCounts(
+						any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+				attempt.assertExecutionProbeClosed();
+				attempt.assertNoPrefixRetry();
+			}
+		}
+	}
+
+	private static void assertNoHistogramProducerWork(long runsBefore, long mergesBefore, long rootsBefore) {
+		assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+		assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isEqualTo(mergesBefore);
+		assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get()).isEqualTo(rootsBefore);
+	}
+
+	@Test
+	public void preparedSerialHistogramDeclinesWhenThresholdChangesBeforeOpen() throws Exception {
+		openRepository();
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+					new int[] { TripleIndex.SUBJ_IDX });
+			assertThat(plan).isNotNull();
+			assertThat(plan.usesAdjacency()).as("the prepared receipt is for the real SOC root-merge path").isTrue();
+
+			RowState row = new RowState(source, NativeSlotLayout.empty(),
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+			try {
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				long parallelRunsBefore = LmdbNativeRunCountHistogram.PARALLEL_RUNS.get();
+				long rootMergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+				long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+				long parallelMergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+				long denseMorselsBefore = LmdbNativeRunCountHistogram.DENSE_ROOT_MORSELS.get();
+				long fallbackRangesBefore = LmdbNativeRunCountHistogram.ROOT_MERGE_FALLBACK_RANGES.get();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the snapshot-bound histogram recipe is prepared").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(quote).as("the real serial SOC receipt has a complete prepared physical quote").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+
+				System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+				try (var result = prepared.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
+						row.cancellation)) {
+					assertThat(result)
+							.as("a changed parallel threshold invalidates the serial receipt before opening work")
+							.isNull();
+				}
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(LmdbNativeRunCountHistogram.PARALLEL_RUNS.get()).isEqualTo(parallelRunsBefore);
+				assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isEqualTo(rootMergesBefore);
+				assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get()).isEqualTo(rootsBefore);
+				assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isEqualTo(parallelMergesBefore);
+				assertThat(LmdbNativeRunCountHistogram.DENSE_ROOT_MORSELS.get()).isEqualTo(denseMorselsBefore);
+				assertThat(LmdbNativeRunCountHistogram.ROOT_MERGE_FALLBACK_RANGES.get())
+						.isEqualTo(fallbackRangesBefore);
+			} finally {
+				row.memoryScope.close();
+			}
+		}
+	}
+
+	@Test
+	public void preparedSerialHistogramDeclinesWhenThreadConfigurationChangesBeforeOpen() throws Exception {
+		try (PreparedHistogramFixture fixture = preparedHistogramFixture()) {
+			var ledger = fixture.row().memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBefore = ledger.usedBytes();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			NativeAggregateAlternative.Prepared prepared = fixture.histogram().prepare(fixture.row());
+			assertThat(prepared).as("the two-thread setting prepares a serial SOC receipt").isNotNull();
+			assertThat(prepared.quote(fixture.row())).as("the serial receipt has a complete quote").isNotNull();
+			assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+
+			System.setProperty("rdf4j.lmdb.parallel.threads", "1");
+			CloseableIteration<BindingSet> result = prepared.evaluate(
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), fixture.row().cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(result).as("a changed thread configuration invalidates the serial receipt before producers")
+					.isNull();
+			assertNoHistogramProducerWork(runsBefore, mergesBefore, rootsBefore);
+			assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void preparedHistogramDeclinesWhenScanAggregatesDisabledBeforePrepare() throws Exception {
+		try (PreparedHistogramFixture fixture = preparedHistogramFixture()) {
+			var ledger = fixture.row().memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBefore = ledger.usedBytes();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "false");
+
+			NativeAggregateAlternative.Prepared prepared = fixture.histogram().prepare(fixture.row());
+			assertThat(prepared).as("a disabled aggregate capability keeps the exact ordinary fallback").isNotNull();
+			assertThat(prepared.quote(fixture.row()))
+					.as("scan-aggregate disablement prevents creation of a serial SOC quote")
+					.isNull();
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isEqualTo(mergesBefore);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get()).isEqualTo(rootsBefore);
+			assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void preparedHistogramDeclinesWhenScanAggregatesDisabledBeforeOpen() throws Exception {
+		try (PreparedHistogramFixture fixture = preparedHistogramFixture()) {
+			var ledger = fixture.row().memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+			long ledgerBefore = ledger.usedBytes();
+			long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+			long mergesBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get();
+			long rootsBefore = LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get();
+			NativeAggregateAlternative.Prepared prepared = fixture.histogram().prepare(fixture.row());
+			assertThat(prepared).as("the enabled real snapshot prepares a serial SOC receipt").isNotNull();
+			assertThat(prepared.quote(fixture.row())).as("the prepared receipt has a complete quote").isNotNull();
+			assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+
+			System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "false");
+			CloseableIteration<BindingSet> result = prepared.evaluate(
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(), fixture.row().cancellation);
+			if (result != null) {
+				result.close();
+			}
+			assertThat(result).as("disabling scan aggregates invalidates the opener before producer work").isNull();
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOT_MERGES.get()).isEqualTo(mergesBefore);
+			assertThat(LmdbNativeRunCountHistogram.ADJACENCY_ROOTS.get()).isEqualTo(rootsBefore);
+			assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+		}
+	}
+
+	@Test
+	public void preparedSerialReceiptReservesSourceWorkspaceBeforeOpeningProbe() throws Exception {
+		openRepository();
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = actualSource
+					.predicateProjectionStatistics(true, () -> {
+					});
+			assertThat(statistics).isNotNull();
+			assertThat(statistics.predicates()).isEqualTo(3L);
+			assertThat(statistics.incidences()).isEqualTo(8L);
+			assertThat(statistics.quads()).isEqualTo(8L);
+			assertThat(statistics.largestRootDomain()).isEqualTo(4L);
+			LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+					new int[] { TripleIndex.SUBJ_IDX });
+			assertThat(plan).isNotNull();
+			assertThat(plan.usesAdjacency()).isTrue();
+
+			NativeLmdbQuerySource provider = mock(NativeLmdbQuerySource.class);
+			NativeProbe quoteProbe = mock(NativeProbe.class);
+			NativeProbe executionProbe = mock(NativeProbe.class);
+			WildcardAdjacency quoteCatalog = mock(WildcardAdjacency.class);
+			when(provider.hasCanonicalIds()).thenReturn(true);
+			when(provider.predicateProjectionStatistics(eq(true), any(Runnable.class))).thenReturn(statistics);
+			when(provider.rootCountWorkspace(true))
+					.thenReturn(new NativeLmdbQuerySource.RootCountWorkspace(4096L, 4096L));
+			when(quoteProbe.boundedPredicateSweep(true)).thenReturn(quoteCatalog);
+			when(quoteCatalog.predicateCount()).thenReturn(3);
+			when(quoteCatalog.predicateAt(0)).thenReturn(11L);
+			when(quoteCatalog.predicateAt(1)).thenReturn(12L);
+			when(quoteCatalog.predicateAt(2)).thenReturn(13L);
+			when(quoteCatalog.keyCount()).thenReturn(4L, 3L, 1L);
+			when(quoteCatalog.quadCount()).thenReturn(4L, 3L, 1L);
+			when(quoteCatalog.pageCount()).thenReturn(1L, 1L, 1L);
+			when(executionProbe.boundedPredicateSweep(true)).thenReturn(null);
+
+			RowState row = new RowState(provider, NativeSlotLayout.empty(),
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+			try {
+				var ledger = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory());
+				long ledgerBefore = ledger.usedBytes();
+				when(provider.newProbe()).thenAnswer(ignored -> {
+					assertThat(ledger.usedBytes() - ledgerBefore)
+							.as("fixed source workspace and one catalog plane are reserved before quote probe open")
+							.isGreaterThanOrEqualTo(8192L);
+					return quoteProbe;
+				}).thenAnswer(ignored -> {
+					assertThat(ledger.usedBytes() - ledgerBefore)
+							.as("execution reserves fixed workspace and all four source plane workspaces before probe open")
+							.isGreaterThanOrEqualTo(20480L);
+					return executionProbe;
+				});
+
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(provider, plan, UNKNOWN,
+						UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the exact bounded catalog produces a prepared serial receipt").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(quote).as("the prepared serial receipt has a complete physical quote").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+
+				try (var result = prepared.evaluate(org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance(),
+						row.cancellation)) {
+					assertThat(result).as("a declining execution catalog refuses before opening producers").isNull();
+				}
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				assertThat(ledger.usedBytes()).isEqualTo(ledgerBefore);
+				verify(provider, times(2)).rootCountWorkspace(true);
+				verify(provider, times(1)).estimate(UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN);
+				verify(quoteProbe).close();
+				verify(quoteCatalog).close();
+				verify(executionProbe).boundedPredicateSweep(true);
+				verify(executionProbe).close();
+				verify(executionProbe, never()).adjacency(11L, true);
+				verify(executionProbe, never()).adjacency(12L, true);
+				verify(executionProbe, never()).adjacency(13L, true);
+				verify(quoteCatalog, never()).openKeyRunCursor();
+				verify(provider, never()).prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true);
+			} finally {
+				row.memoryScope.close();
+			}
+		}
+	}
+
+	@Test
+	public void preparedSerialQuoteCoversContinuationAndPageDirectoryWork() throws Exception {
+		openRepository();
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess
+				.openExplicitDataset((LmdbStore) repository.getSail())) {
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = new NativeLmdbQuerySource.PredicateProjectionStatistics(
+					1_000L, 1L, 1L, 1L);
+			LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+					new int[] { TripleIndex.SUBJ_IDX });
+			assertThat(plan).isNotNull();
+			assertThat(plan.usesAdjacency()).isTrue();
+
+			NativeLmdbQuerySource provider = mock(NativeLmdbQuerySource.class);
+			NativeProbe firstProbe = mock(NativeProbe.class);
+			NativeProbe secondProbe = mock(NativeProbe.class);
+			WildcardAdjacency firstLegacyCatalog = mock(WildcardAdjacency.class);
+			WildcardAdjacency secondLegacyCatalog = mock(WildcardAdjacency.class);
+			WildcardAdjacency firstReceiptCatalog = mock(WildcardAdjacency.class);
+			WildcardAdjacency secondReceiptCatalog = mock(WildcardAdjacency.class);
+			when(provider.hasCanonicalIds()).thenReturn(true);
+			when(provider.predicateProjectionStatistics(eq(true), any(Runnable.class))).thenReturn(statistics);
+			when(provider.rootCountWorkspace(true))
+					.thenReturn(new NativeLmdbQuerySource.RootCountWorkspace(4096L, 4096L));
+			when(provider.newProbe()).thenReturn(firstProbe, secondProbe);
+			when(firstProbe.wildcardAdjacency(true)).thenReturn(firstLegacyCatalog);
+			when(secondProbe.wildcardAdjacency(true)).thenReturn(secondLegacyCatalog);
+			when(firstProbe.boundedPredicateSweep(true)).thenReturn(firstReceiptCatalog);
+			when(secondProbe.boundedPredicateSweep(true)).thenReturn(secondReceiptCatalog);
+			for (WildcardAdjacency legacyCatalog : List.of(firstLegacyCatalog, secondLegacyCatalog)) {
+				when(legacyCatalog.predicateCount()).thenReturn(1);
+				when(legacyCatalog.predicateAt(0)).thenReturn(11L);
+				when(legacyCatalog.keyCount()).thenReturn(1L);
+			}
+			for (WildcardAdjacency receiptCatalog : List.of(firstReceiptCatalog, secondReceiptCatalog)) {
+				when(receiptCatalog.predicateCount()).thenReturn(1);
+				when(receiptCatalog.predicateAt(0)).thenReturn(11L);
+				when(receiptCatalog.keyCount()).thenReturn(1L);
+				when(receiptCatalog.quadCount()).thenReturn(1_000L);
+				// One root spans 1,000 continuation pages, each carrying at least one quad.
+				when(receiptCatalog.pageCount()).thenReturn(1_000L);
+			}
+
+			RowState row = new RowState(provider, NativeSlotLayout.empty(),
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+			try {
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(provider, plan, UNKNOWN,
+						UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("the bounded one-root, one-predicate receipt is prepared").isNotNull();
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(quote).as("the prepared SOC receipt has a complete physical quote").isNotNull();
+				assertThat(quote.input().workEvidence().isComplete()).isTrue();
+				LmdbNativeCostVector total = quote.input().operations().plus(quote.extra());
+				assertThat(total.high(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("the quote covers catalog/view work, both page-directory passes, and root plus continuation headers")
+						.isGreaterThanOrEqualTo(2D + 5D * 1_000D + 1D);
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				verify(firstProbe).close();
+				verify(secondProbe, never()).close();
+				verify(provider).newProbe();
+				verify(firstReceiptCatalog, never()).openKeyRunCursor();
+				verify(secondReceiptCatalog, never()).openKeyRunCursor();
+			} finally {
+				row.memoryScope.close();
+			}
+		}
+	}
+
+	@Test
+	public void defaultProbeWithoutWorkspaceCeilingRemainsUnpricedWithoutOpeningRuns() throws Exception {
+		openRepository();
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actualSource = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = actualSource
+					.predicateProjectionStatistics(true, () -> {
+					});
+			assertThat(statistics).as("the compacted real store provides valid P/R/Q metadata").isNotNull();
+			assertThat(statistics.quads()).isEqualTo(8L);
+			assertThat(statistics.incidences()).isEqualTo(8L);
+			assertThat(statistics.predicates()).isEqualTo(3L);
+			LmdbPrefixRunPlan plan = LmdbPrefixRunPlanTestAccess.adjacencySubject(
+					new int[] { TripleIndex.SUBJ_IDX });
+			assertThat(plan).isNotNull();
+			assertThat(plan.usesAdjacency()).isTrue();
+
+			NativeLmdbQuerySource provider = mock(NativeLmdbQuerySource.class);
+			NativeProbe probe = mock(NativeProbe.class);
+			WildcardAdjacency planes = mock(WildcardAdjacency.class);
+			when(provider.hasCanonicalIds()).thenReturn(true);
+			when(provider.rootCountWorkspace(true)).thenCallRealMethod();
+			when(provider.predicateProjectionStatistics(eq(true), any(Runnable.class))).thenReturn(statistics);
+			assertThat(provider.predicateProjectionStatistics(true, () -> {
+			})).as("the mock provider exposes valid exact predicate, root, and quad counts").isEqualTo(statistics);
+			when(provider.newProbe()).thenReturn(probe);
+			when(probe.wildcardAdjacency(true)).thenReturn(planes);
+			when(planes.predicateCount()).thenReturn(3);
+			when(planes.predicateAt(0)).thenReturn(11L);
+			when(planes.predicateAt(1)).thenReturn(12L);
+			when(planes.predicateAt(2)).thenReturn(13L);
+			when(planes.keyCount()).thenReturn(4L, 3L, 1L);
+			when(planes.quadCount()).thenReturn(4L, 3L, 1L);
+
+			RowState row = new RowState(provider, NativeSlotLayout.empty(),
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+			try {
+				LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+						new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+						new EvaluationStatistics(), false);
+				TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+						.getTupleExpr();
+				LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(provider, plan, UNKNOWN,
+						UNKNOWN,
+						UNKNOWN, "outDegree", "subjects", strategy, expression,
+						new QueryEvaluationContext.Minimal((Dataset) null));
+				long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+				NativeAggregateAlternative.Prepared prepared = histogram.prepare(row);
+				assertThat(prepared).as("valid P/R/Q alone does not prove a source-owned workspace ceiling")
+						.isNotNull();
+				assertThat(prepared.estimateWork().known())
+						.as("the provider supplies a finite root-sweep work interval")
+						.isTrue();
+				assertThat(prepared.quote(row)).as("the default provider cannot produce a priced receipt").isNull();
+				assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+				verify(provider, never()).prefixRuns(plan, UNKNOWN, UNKNOWN, UNKNOWN, UNKNOWN, true);
+				verify(planes, never()).openKeyRunCursor();
+				var calls = inOrder(provider);
+				calls.verify(provider).rootCountWorkspace(true);
+				calls.verify(provider).newProbe(); // only the existing unpriced legacy estimate uses this probe
+				verify(probe, never()).boundedPredicateSweep(true);
+				verify(probe).close();
+				verify(planes).close();
+			} finally {
+				row.memoryScope.close();
+			}
+		}
+	}
+
+	@Test
+	public void rootWorkspaceChargesRealPlaneArraysAndReleasesItsLedgerReservation() throws Exception {
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory valueFactory = connection.getValueFactory();
+			connection.begin();
+			for (int index = 0; index < 40; index++) {
+				connection.add(valueFactory.createIRI(EX, "wideSubject"),
+						valueFactory.createIRI(EX, "widePredicate" + index),
+						valueFactory.createIRI(EX, "wideObject" + index));
+			}
+			connection.commit();
+		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS))
+				.as("the adjacency applier has caught up with all 40 added predicate planes")
+				.isTrue();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the real adjacency index is compacted before its view is opened")
+				.isTrue();
+
+		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource explicit = (NativeLmdbQuerySource) dataset;
+			var statistics = explicit.predicateProjectionStatistics(true, () -> {
+			});
+			assertThat(statistics).as("the compacted explicit snapshot exposes its complete subject planes")
+					.isNotNull();
+			assertThat(statistics.predicates()).as("the real catalog exceeds the fixed allowance by 40 planes")
+					.isGreaterThanOrEqualTo(40L);
+
+			SyntheticValueSource evaluation = SyntheticValueSource.forEvaluation(explicit);
+			try (NativeExecutionContext context = evaluation.executionContext()) {
+				var ledger = context.memoryLedger();
+				long before = ledger.usedBytes();
+				long arrayFootprintPerPlane = 2L * (16L + 256L * Long.BYTES);
+				long requiredArrayFootprint = Math.multiplyExact(statistics.predicates(), arrayFootprintPerPlane);
+				try (NativeStructuralCounts.RootWorkspace workspace = NativeStructuralCounts.rootWorkspace(evaluation,
+						NativeCancellationToken.forSource(evaluation))) {
+					assertThat(workspace).as("the real catalog opens a root-merge workspace").isNotNull();
+					assertThat(ledger.usedBytes() - before)
+							.as("the retained query-ledger claim covers two long[256] arrays and headers per predicate")
+							.isGreaterThanOrEqualTo(requiredArrayFootprint);
+				}
+				assertThat(ledger.usedBytes())
+						.as("closing the root workspace returns the query ledger to its prior level")
+						.isEqualTo(before);
+			}
+		}
+	}
+
+	@Test
+	public void histogramMatchesOnLargerRandomDatasetInParallel() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, "0");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		String previousMaxTasks = System.setProperty("rdf4j.lmdb.parallel.maxTasks", "2");
+		try {
+			LmdbStore store = new LmdbStore(dataDir,
+					new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
+							.setDirectAdjacencyEnabled(true));
+			repository = new SailRepository(store);
+			Map<String, Integer> degrees = new HashMap<>();
+			Random random = new Random(13);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				ValueFactory values = connection.getValueFactory();
+				Set<String> seen = new HashSet<>();
+				connection.begin();
+				for (int index = 0; index < 4000; index++) {
+					String subject = "s" + random.nextInt(900);
+					String predicate = "p" + random.nextInt(4);
+					String object = "o" + random.nextInt(500);
+					if (seen.add(subject + "|" + predicate + "|" + object)) {
+						connection.add(values.createIRI(EX, subject), values.createIRI(EX, predicate),
+								values.createIRI(EX, object));
+						degrees.merge(subject, 1, Integer::sum);
+					}
+				}
+				connection.commit();
+			}
+			assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+			List<BindingSet> reference;
+			String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				reference = QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate());
+			} finally {
+				if (previousNative == null) {
+					System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+				} else {
+					System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+				}
+			}
+			Map<Long, Long> expected = new HashMap<>();
+			degrees.values().forEach(degree -> expected.merge((long) degree, 1L, Long::sum));
+			List<String> expectedRows = new ArrayList<>();
+			expected.keySet()
+					.stream()
+					.sorted()
+					.forEach(degree -> expectedRows.add(degree + "=" + expected.get(degree)));
+			assertThat(reference).isNotEmpty();
+			assertThat(histogramRows(reference)).containsExactlyElementsOf(expectedRows);
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				assertThat(QueryResults.asList(connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM).evaluate()))
+						.containsExactlyElementsOf(reference);
+			}
+			assertThat(AdjacencyEngagementTestAccess.buildNow(store)).as("the same 4k graph is compacted").isTrue();
+			try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+				NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+				ParallelRootCountReceipt receipt = source.parallelRootCountReceipt(true, () -> {
+				});
+				assertThat(receipt).isNotNull();
+				assertThat(receipt.quads()).isEqualTo(3998L);
+			}
+			assertForcedHistogramRoute("runCountHistogram", "runCountHistogram", true, reference);
+			try (var restored = LmdbNativeParallelPipelines.tryReserveTasks(false, 2)) {
+				assertThat(restored).as("both worker slots are returned after the histogram").isNotNull();
+				assertThat(restored.grantedWorkers()).isEqualTo(2);
+			}
+		} finally {
+			if (previousMaxTasks == null) {
+				System.clearProperty("rdf4j.lmdb.parallel.maxTasks");
+			} else {
+				System.setProperty("rdf4j.lmdb.parallel.maxTasks", previousMaxTasks);
+			}
+		}
 	}
 
 	@Test
@@ -192,13 +3677,30 @@ public class LmdbRunCountHistogramTest {
 	}
 
 	@Test
-	public void specializedRunCountResultSharesPostGroupNowAcrossEvaluations() {
+	public void specializedRunCountResultSharesPostGroupNowAcrossEvaluations() throws InterruptedException {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
 		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory valueFactory = connection.getValueFactory();
+			IRI subject = valueFactory.createIRI(EX, "specializedFreshSubject");
+			IRI knows = valueFactory.createIRI(EX, "knows");
+			connection.begin();
+			for (int index = 0; index < 4096; index++) {
+				connection.add(subject, knows, valueFactory.createIRI(EX, "specializedFreshObject-" + index));
+			}
+			connection.commit();
+		}
+		assertThat(store.awaitDirectAdjacencyReady(60, TimeUnit.SECONDS)).isTrue();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture and high-fanout subject are compacted before compilation")
+				.isTrue();
+
 		String query = OUT_DEGREE_HISTOGRAM.replace("SELECT ?outDegree ", "SELECT ?outDegree (NOW() AS ?now) ");
-		long before = LmdbNativeRunCountHistogram.RUNS.get();
 
 		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
-		LmdbStore store = (LmdbStore) repository.getSail();
 		try (var dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store)) {
 			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
 					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
@@ -207,10 +3709,18 @@ public class LmdbRunCountHistogramTest {
 					new QueryEvaluationContext.Minimal((Dataset) null), strategy, (NativeLmdbQuerySource) dataset);
 			assertThat(outcome.isSupported()).as("the specialized grouped query must compile natively").isTrue();
 			QueryEvaluationStep step = outcome.step();
+			long beforeFirstEvaluation = LmdbNativeRunCountHistogram.RUNS.get();
 			List<BindingSet> first = evaluate(step);
+			long afterFirstEvaluation = LmdbNativeRunCountHistogram.RUNS.get();
+			assertThat(afterFirstEvaluation).as("the first retained-step evaluation executes the histogram")
+					.isGreaterThan(beforeFirstEvaluation);
 			List<BindingSet> second = evaluate(step);
-			assertThat(first).hasSize(3);
-			assertThat(second).hasSize(3);
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get())
+					.as("the second retained-step evaluation executes the histogram again")
+					.isGreaterThan(afterFirstEvaluation);
+			List<String> expectedRows = List.of("1=3", "2=1", "3=1", "4096=1");
+			assertThat(histogramRows(first)).containsExactlyElementsOf(expectedRows);
+			assertThat(histogramRows(second)).containsExactlyElementsOf(expectedRows);
 			assertThat(first)
 					.allSatisfy(row -> assertThat(row.getValue("now")).isSameAs(first.getFirst().getValue("now")));
 			assertThat(second)
@@ -218,7 +3728,6 @@ public class LmdbRunCountHistogramTest {
 			assertThat(second.getFirst().getValue("now"))
 					.as("a retained specialized aggregate step must create a fresh query scope per evaluation")
 					.isNotSameAs(first.getFirst().getValue("now"));
-			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(before);
 		}
 	}
 
@@ -287,6 +3796,72 @@ public class LmdbRunCountHistogramTest {
 		}
 	}
 
+	private PreparedHistogramFixture preparedHistogramFixture() throws Exception {
+		System.setProperty(DIRECT_ADJACENCY_SCAN_AGGREGATES_PROPERTY, "true");
+		System.setProperty(LmdbNativeParallelPrefixRuns.PARALLEL_MIN_ESTIMATE_PROPERTY, Long.toString(Long.MAX_VALUE));
+		System.setProperty("rdf4j.lmdb.parallel.threads", "2");
+		openRepository();
+		LmdbStore store = (LmdbStore) repository.getSail();
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store))
+				.as("the fixture's eight committed statements are folded into one complete adjacency base")
+				.isTrue();
+		SailDataset dataset = org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess.openExplicitDataset(store);
+		RowState row = null;
+		try {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.PredicateProjectionStatistics statistics = source.predicateProjectionStatistics(true,
+					() -> {
+					});
+			assertThat(statistics).as("the compacted snapshot exposes its complete SOC metadata").isNotNull();
+			assertThat(statistics.predicates()).isEqualTo(3L);
+			assertThat(statistics.incidences()).isEqualTo(8L);
+			assertThat(statistics.quads()).isEqualTo(8L);
+			assertThat(statistics.largestRootDomain()).isEqualTo(4L);
+			LmdbPrefixRunPlan plan = source.prefixRunPlan(new int[] { TripleIndex.SUBJ_IDX }, UNKNOWN, UNKNOWN, UNKNOWN,
+					UNKNOWN);
+			assertThat(plan).as("the real snapshot supplies an exact SUBJECT adjacency plan").isNotNull();
+			assertThat(plan.prefixFields()).containsExactly(TripleIndex.SUBJ_IDX);
+
+			row = new RowState(source, NativeSlotLayout.empty(),
+					org.eclipse.rdf4j.query.impl.EmptyBindingSet.getInstance());
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(
+					new SailDatasetTripleTermSource(repository.getValueFactory(), dataset), null, null, 0L,
+					new EvaluationStatistics(), false);
+			TupleExpr expression = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, OUT_DEGREE_HISTOGRAM, null)
+					.getTupleExpr();
+			LmdbNativeRunCountHistogram histogram = new LmdbNativeRunCountHistogram(source, plan, UNKNOWN, UNKNOWN,
+					UNKNOWN, "outDegree", "subjects", strategy, expression,
+					new QueryEvaluationContext.Minimal((Dataset) null));
+			return new PreparedHistogramFixture(dataset, row, histogram);
+		} catch (Exception | Error failure) {
+			if (row != null) {
+				try {
+					row.memoryScope.close();
+				} catch (Throwable closeFailure) {
+					failure.addSuppressed(closeFailure);
+				}
+			}
+			try {
+				dataset.close();
+			} catch (Throwable closeFailure) {
+				failure.addSuppressed(closeFailure);
+			}
+			throw failure;
+		}
+	}
+
+	private record PreparedHistogramFixture(SailDataset dataset, RowState row,
+			LmdbNativeRunCountHistogram histogram) implements AutoCloseable {
+		@Override
+		public void close() throws Exception {
+			try {
+				row.memoryScope.close();
+			} finally {
+				dataset.close();
+			}
+		}
+	}
+
 	private void openRepository() {
 		LmdbStore store = new LmdbStore(dataDir,
 				new LmdbStoreConfig("spoc,posc,ospc").setNativeEvaluationEnabled(true)
@@ -314,6 +3889,583 @@ public class LmdbRunCountHistogramTest {
 		}
 	}
 
+	private static SyntheticValueSource sparseRootSource(long lastValue, Resource firstSubject, int firstType,
+			Resource secondSubject, int secondType, IRI predicate, IRI firstObject, IRI secondObject,
+			SparseRootCounters counters) throws IOException {
+		long[] roots = { ValueIds.createId(firstType, 1L), ValueIds.createId(secondType, lastValue) };
+		long predicateId = ValueIds.createId(ValueIds.T_URI, 3L);
+		Map<Value, Long> ids = Map.of(firstSubject, roots[0], secondSubject, roots[1], predicate, predicateId,
+				firstObject, ValueIds.createId(ValueIds.T_URI, 4L), secondObject,
+				ValueIds.createId(ValueIds.T_URI, 5L));
+		Map<Long, Value> dictionary = new HashMap<>();
+		ids.forEach((value, id) -> dictionary.put(id, value));
+		Object view = new Object();
+		RootCountWorkspace workspace = new RootCountWorkspace(4096L, 4096L);
+		ParallelRootCountReceipt receipt = new ParallelRootCountReceipt(view, true, true, 1, 1, 2L, 2L, 2L, 2L,
+				roots[0], roots[1], workspace);
+		NativeLmdbQuerySource provider = mock(NativeLmdbQuerySource.class, CALLS_REAL_METHODS);
+		doAnswer(call -> dictionary).when(provider).idSpace();
+		doAnswer(call -> true).when(provider).hasCanonicalIds();
+		doAnswer(call -> ids.getOrDefault(call.getArgument(0), NativeLmdbQuerySource.UNKNOWN_ID))
+				.when(provider)
+				.idOf(any(Value.class));
+		doAnswer(call -> dictionary.get((long) call.getArgument(0))).when(provider).lazyValue(anyLong());
+		doAnswer(call -> workspace).when(provider).rootCountWorkspace(true);
+		doAnswer(call -> {
+			((Runnable) call.getArgument(1)).run();
+			return receipt;
+		}).when(provider).parallelRootCountReceipt(eq(true), any(Runnable.class));
+		doAnswer(call -> {
+			assertThat((Object) call.getArgument(0)).isSameAs(receipt);
+			((Runnable) call.getArgument(2)).run();
+			int count = call.getArgument(1);
+			RootCountWorker[] workers = new RootCountWorker[count];
+			for (int index = 0; index < count; index++) {
+				workers[index] = sparseRootWorker(view, predicateId, roots, counters);
+				counters.workerOpens.incrementAndGet();
+			}
+			return workers;
+		}).when(provider).openParallelRootCountWorkers(any(), anyInt(), any(Runnable.class));
+		for (Map.Entry<Value, Long> entry : ids.entrySet()) {
+			assertThat(provider.idOf(entry.getKey())).isEqualTo(entry.getValue());
+			assertThat(provider.lazyValue(entry.getValue())).isEqualTo(entry.getKey());
+		}
+		return SyntheticValueSource.forEvaluation(provider);
+	}
+
+	private static RootCountWorker sparseRootWorker(Object view, long predicate, long[] roots,
+			SparseRootCounters counters) throws IOException {
+		RootCountWorker worker = mock(RootCountWorker.class);
+		when(worker.viewAuthority()).thenReturn(view);
+		when(worker.bySubject()).thenReturn(true);
+		when(worker.explicit()).thenReturn(true);
+		when(worker.predicateCount()).thenReturn(1);
+		when(worker.predicateAt(0)).thenReturn(predicate);
+		doAnswer(call -> {
+			counters.probeOpens.incrementAndGet();
+			RootCountProbe probe = mock(RootCountProbe.class);
+			when(probe.rootCountViewAuthority()).thenReturn(view);
+			doAnswer(planeCall -> sparseRootPlane(roots, counters)).when(probe).adjacency(predicate, true);
+			doAnswer(close -> {
+				counters.probeCloses.incrementAndGet();
+				return null;
+			}).when(probe).close();
+			return probe;
+		}).when(worker).newProbe();
+		doAnswer(close -> {
+			counters.workerCloses.incrementAndGet();
+			return null;
+		}).when(worker).close();
+		return worker;
+	}
+
+	private static NativeAdjacency sparseRootPlane(long[] roots, SparseRootCounters counters) {
+		NativeAdjacency plane = mock(NativeAdjacency.class);
+		when(plane.supportsKeyEnumeration()).thenReturn(true);
+		when(plane.keysImplyNonEmptyRuns()).thenReturn(true);
+		when(plane.orderedKeyRunsWithBoundedOpen()).thenReturn(true);
+		when(plane.keyCount()).thenReturn((long) roots.length);
+		when(plane.quadCount()).thenReturn((long) roots.length);
+		when(plane.pageCount()).thenReturn((long) roots.length);
+		doAnswer(call -> roots[Math.toIntExact((long) call.getArgument(0))]).when(plane).keyAt(anyLong());
+		doAnswer(call -> {
+			((Runnable) call.getArgument(1)).run();
+			long key = call.getArgument(0);
+			int ordinal = 0;
+			while (ordinal < roots.length && Long.compareUnsigned(roots[ordinal], key) < 0) {
+				ordinal++;
+			}
+			return (long) ordinal;
+		}).when(plane).lowerBoundKeyOrdinal(anyLong(), any(Runnable.class));
+		doAnswer(call -> {
+			int from = Math.toIntExact((long) call.getArgument(0));
+			int to = Math.toIntExact((long) call.getArgument(1));
+			assertThat(from).isBetween(0, roots.length);
+			assertThat(to).isBetween(from, roots.length);
+			Runnable initialPoll = call.getArgument(2);
+			initialPoll.run();
+			counters.cursorOpens.incrementAndGet();
+			KeyRunCursor cursor = mock(KeyRunCursor.class);
+			AtomicReference<Runnable> poll = new AtomicReference<>(initialPoll);
+			AtomicInteger position = new AtomicInteger(from);
+			AtomicInteger emptyFills = new AtomicInteger();
+			doAnswer(install -> {
+				poll.set(install.getArgument(0));
+				return null;
+			}).when(cursor).cancellationPoll(any(Runnable.class));
+			doAnswer(fill -> {
+				poll.get().run();
+				long[] targetRoots = fill.getArgument(0);
+				int rootOffset = fill.getArgument(1);
+				long[] targetCounts = fill.getArgument(2);
+				int countOffset = fill.getArgument(3);
+				int maximum = fill.getArgument(4);
+				int copied = 0;
+				while (copied < maximum && position.get() < to) {
+					targetRoots[rootOffset + copied] = roots[position.getAndIncrement()];
+					targetCounts[countOffset + copied] = 1L;
+					copied++;
+				}
+				if (copied == 0 && emptyFills.incrementAndGet() > 3) {
+					counters.excessEmptyFills.incrementAndGet();
+					throw new IllegalStateException("repeatedly scanned an exhausted root cursor");
+				}
+				return copied;
+			}).when(cursor).fillRootCounts(any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+			doAnswer(close -> {
+				counters.cursorCloses.incrementAndGet();
+				return null;
+			}).when(cursor).close();
+			return cursor;
+		}).when(plane).openKeyRunCursor(anyLong(), anyLong(), any(Runnable.class));
+		return plane;
+	}
+
+	private static final class SparseRootCounters {
+		final AtomicInteger workerOpens = new AtomicInteger();
+		final AtomicInteger workerCloses = new AtomicInteger();
+		final AtomicInteger probeOpens = new AtomicInteger();
+		final AtomicInteger probeCloses = new AtomicInteger();
+		final AtomicInteger cursorOpens = new AtomicInteger();
+		final AtomicInteger cursorCloses = new AtomicInteger();
+		final AtomicInteger excessEmptyFills = new AtomicInteger();
+	}
+
+	private static SyntheticValueSource recordingRetainedRangeCloseFailure(NativeLmdbQuerySource actualSource,
+			RetainedRangeCloseFailure injected) throws IOException {
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+		doAnswer(call -> {
+			RootCountWorker[] workers = (RootCountWorker[]) call.callRealMethod();
+			if (workers == null) {
+				return null;
+			}
+			for (int index = 0; index < workers.length; index++) {
+				RootCountWorker worker = spy(workers[index]);
+				AtomicInteger probeNumber = new AtomicInteger();
+				doAnswer(probeCall -> {
+					RootCountProbe probe = spy((RootCountProbe) probeCall.callRealMethod());
+					boolean denseProbe = probeNumber.getAndIncrement() == 0;
+					AtomicBoolean selectedProbe = new AtomicBoolean();
+					doAnswer(planeCall -> {
+						if (denseProbe) {
+							return null;
+						}
+						NativeAdjacency actualPlane = (NativeAdjacency) planeCall.callRealMethod();
+						if (actualPlane == null) {
+							return null;
+						}
+						NativeAdjacency plane = spy(actualPlane);
+						doAnswer(cursorCall -> {
+							KeyRunCursor actualCursor = (KeyRunCursor) cursorCall.callRealMethod();
+							if (actualCursor == null) {
+								return null;
+							}
+							KeyRunCursor cursor = spy(actualCursor);
+							AtomicBoolean selectedCursor = new AtomicBoolean();
+							doAnswer(fill -> {
+								int count = (int) fill.callRealMethod();
+								if (selectedCursor.get()) {
+									injected.secondFill.set(true);
+									injected.deadline.trip();
+									LmdbNativeProbeDeadline.poll(0);
+									throw new AssertionError("the active deadline did not interrupt the second fill");
+								}
+								if (count > 0 && injected.firstFill.compareAndSet(false, true)) {
+									selectedCursor.set(true);
+									selectedProbe.set(true);
+								}
+								return count;
+							}).when(cursor)
+									.fillRootCounts(any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+							return cursor;
+						}).when(plane).openKeyRunCursor(anyLong(), anyLong(), any(Runnable.class));
+						return plane;
+					}).when(probe).adjacency(anyLong(), anyBoolean());
+					doAnswer(close -> {
+						Object result = close.callRealMethod();
+						if (selectedProbe.get()) {
+							injected.probeCloses.incrementAndGet();
+							throw injected.closeFailure;
+						}
+						return result;
+					}).when(probe).close();
+					return probe;
+				}).when(worker).newProbe();
+				workers[index] = worker;
+			}
+			return workers;
+		}).when(source).openParallelRootCountWorkers(any(), anyInt(), any(Runnable.class));
+		return source;
+	}
+
+	private static final class RetainedRangeCloseFailure {
+		final LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		final AtomicBoolean firstFill = new AtomicBoolean();
+		final AtomicBoolean secondFill = new AtomicBoolean();
+		final AtomicInteger probeCloses = new AtomicInteger();
+		final IllegalStateException closeFailure = new IllegalStateException("retained probe close failed");
+	}
+
+	private static SyntheticValueSource recordingRetainedDenseCloseFailure(NativeLmdbQuerySource actualSource,
+			RetainedDenseCloseFailure injected) throws IOException {
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+		doAnswer(call -> {
+			RootCountWorker[] workers = (RootCountWorker[]) call.callRealMethod();
+			if (workers == null) {
+				return null;
+			}
+			for (int index = 0; index < workers.length; index++) {
+				RootCountWorker worker = spy(workers[index]);
+				doAnswer(probeCall -> {
+					RootCountProbe actualProbe = (RootCountProbe) probeCall.callRealMethod();
+					if (!injected.selected.compareAndSet(false, true)) {
+						return actualProbe;
+					}
+					RootCountProbe probe = spy(actualProbe);
+					doAnswer(planeCall -> {
+						NativeAdjacency actualPlane = (NativeAdjacency) planeCall.callRealMethod();
+						if (actualPlane == null) {
+							return null;
+						}
+						int ordinal = injected.planesOpened.getAndIncrement();
+						NativeAdjacency plane = spy(actualPlane);
+						doAnswer(close -> {
+							Object result = close.callRealMethod();
+							injected.planesClosed.incrementAndGet();
+							if (ordinal == 0) {
+								throw LmdbNativeProbeDeadlineExceeded.INSTANCE;
+							}
+							if (ordinal == 1) {
+								throw injected.planeFailure;
+							}
+							return result;
+						}).when(plane).close();
+						return plane;
+					}).when(probe).adjacency(anyLong(), anyBoolean());
+					doAnswer(close -> {
+						close.callRealMethod();
+						injected.probeCloses.incrementAndGet();
+						throw injected.probeFailure;
+					}).when(probe).close();
+					return probe;
+				}).when(worker).newProbe();
+				workers[index] = worker;
+			}
+			return workers;
+		}).when(source).openParallelRootCountWorkers(any(), anyInt(), any(Runnable.class));
+		return source;
+	}
+
+	private static final class RetainedDenseCloseFailure {
+		final AtomicBoolean selected = new AtomicBoolean();
+		final AtomicInteger planesOpened = new AtomicInteger();
+		final AtomicInteger planesClosed = new AtomicInteger();
+		final AtomicInteger probeCloses = new AtomicInteger();
+		final IllegalStateException planeFailure = new IllegalStateException("second dense plane close failed");
+		final IllegalStateException probeFailure = new IllegalStateException("dense probe close failed");
+	}
+
+	private static SyntheticValueSource recordingParallelQuoteSource(NativeLmdbQuerySource actualSource,
+			AtomicInteger splitOpens, AtomicInteger rootOpens, AtomicInteger prefixOpens,
+			AtomicInteger workerOpens, AtomicInteger legacyWorkerOpens) throws IOException {
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+		doAnswer(call -> {
+			splitOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source).prefixRunSplitValues(any(), anyLong(), anyLong(), anyLong(), anyLong(), anyInt(), anyInt());
+		doAnswer(call -> {
+			prefixOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source).prefixRuns(any(), anyLong(), anyLong(), anyLong(), anyLong(), anyBoolean());
+		doAnswer(call -> {
+			legacyWorkerOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source).openParallelSources(anyInt());
+		doAnswer(call -> {
+			workerOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(source).openParallelRootCountWorkers(any(), anyInt(), any(Runnable.class));
+		doAnswer(call -> {
+			NativeProbe probe = spy((NativeProbe) call.callRealMethod());
+			doAnswer(probeCall -> recordingWildcardRoots((WildcardAdjacency) probeCall.callRealMethod(), rootOpens))
+					.when(probe)
+					.wildcardAdjacency(anyBoolean());
+			doAnswer(probeCall -> recordingWildcardRoots((WildcardAdjacency) probeCall.callRealMethod(), rootOpens))
+					.when(probe)
+					.boundedPredicateSweep(anyBoolean());
+			doAnswer(probeCall -> recordingPlaneRoots((NativeAdjacency) probeCall.callRealMethod(), rootOpens))
+					.when(probe)
+					.adjacency(anyLong(), anyBoolean());
+			return probe;
+		}).when(source).newProbe();
+		return source;
+	}
+
+	private static SyntheticValueSource recordingWorkerCancellationSource(NativeLmdbQuerySource actualSource,
+			AtomicInteger workerOpens, AtomicInteger physicalFills) throws IOException {
+		return recordingWorkerCancellationSource(actualSource, workerOpens, physicalFills, null);
+	}
+
+	private static SyntheticValueSource recordingWorkerCancellationSource(NativeLmdbQuerySource actualSource,
+			AtomicInteger workerOpens, AtomicInteger physicalFills, WorkerCursorFailure injected) throws IOException {
+		return recordingWorkerCancellationSource(actualSource, workerOpens, physicalFills, injected, null);
+	}
+
+	private static SyntheticValueSource recordingWorkerCancellationSource(NativeLmdbQuerySource actualSource,
+			AtomicInteger workerOpens, AtomicInteger physicalFills, WorkerCursorFailure injected,
+			WorkerProbeDeadline deadline) throws IOException {
+		SyntheticValueSource source = spy(SyntheticValueSource.forEvaluation(actualSource));
+		doAnswer(call -> {
+			RootCountWorker[] workers = (RootCountWorker[]) call.callRealMethod();
+			if (workers == null) {
+				return null;
+			}
+			workerOpens.incrementAndGet();
+			for (int index = 0; index < workers.length; index++) {
+				RootCountWorker worker = spy(workers[index]);
+				AtomicInteger probeOpens = new AtomicInteger();
+				doAnswer(probeCall -> {
+					RootCountProbe probe = spy((RootCountProbe) probeCall.callRealMethod());
+					boolean denseProbe = probeOpens.getAndIncrement() == 0;
+					doAnswer(planeCall -> recordingWorkerPlane((NativeAdjacency) planeCall.callRealMethod(),
+							physicalFills, denseProbe ? injected : null, deadline, denseProbe))
+									.when(probe)
+									.adjacency(anyLong(), anyBoolean());
+					return probe;
+				}).when(worker).newProbe();
+				workers[index] = worker;
+			}
+			return workers;
+		}).when(source).openParallelRootCountWorkers(any(), anyInt(), any(Runnable.class));
+		doAnswer(call -> {
+			ParallelSource[] workers = (ParallelSource[]) call.callRealMethod();
+			if (workers == null) {
+				return null;
+			}
+			workerOpens.incrementAndGet();
+			for (int i = 0; i < workers.length; i++) {
+				ParallelSource worker = spy(workers[i]);
+				AtomicInteger probeOpens = new AtomicInteger();
+				org.mockito.stubbing.Answer<NativeProbe> probeAnswer = probeCall -> {
+					NativeProbe probe = spy((NativeProbe) probeCall.callRealMethod());
+					boolean denseProbe = probeOpens.getAndIncrement() == 0;
+					doAnswer(planeCall -> recordingWorkerPlane((NativeAdjacency) planeCall.callRealMethod(),
+							physicalFills, denseProbe ? injected : null, deadline, denseProbe))
+									.when(probe)
+									.adjacency(anyLong(), anyBoolean());
+					return probe;
+				};
+				doAnswer(probeAnswer).when(worker).newProbe();
+				doAnswer(probeAnswer).when(worker).newProbe(any());
+				workers[i] = worker;
+			}
+			return workers;
+		}).when(source).openParallelSources(anyInt());
+		return source;
+	}
+
+	private static NativeAdjacency recordingWorkerPlane(NativeAdjacency actual, AtomicInteger physicalFills,
+			WorkerCursorFailure injected, WorkerProbeDeadline deadline, boolean denseProbe) {
+		if (actual == null) {
+			return null;
+		}
+		NativeAdjacency plane = spy(actual);
+		doAnswer(call -> recordingWorkerCursor((KeyRunCursor) call.callRealMethod(), physicalFills, injected, deadline,
+				denseProbe && deadline != null && actual.keyCount() > 0L, false))
+						.when(plane)
+						.openKeyRunCursor();
+		doAnswer(call -> recordingWorkerCursor((KeyRunCursor) call.callRealMethod(), physicalFills, injected, deadline,
+				denseProbe && (long) call.getArgument(0) < (long) call.getArgument(1), false))
+						.when(plane)
+						.openKeyRunCursor(anyLong(), anyLong());
+		doAnswer(call -> recordingWorkerCursor((KeyRunCursor) call.callRealMethod(), physicalFills, injected, deadline,
+				denseProbe && (long) call.getArgument(0) < (long) call.getArgument(1), true))
+						.when(plane)
+						.openKeyRunCursor(anyLong(), anyLong(), any(Runnable.class));
+		return plane;
+	}
+
+	private static KeyRunCursor recordingWorkerCursor(KeyRunCursor actual, AtomicInteger physicalFills,
+			WorkerCursorFailure injected, WorkerProbeDeadline deadline, boolean mayTrigger,
+			boolean callbackPreinstalled) {
+		if (actual == null) {
+			return null;
+		}
+		KeyRunCursor cursor = spy(actual);
+		AtomicBoolean callbackInstalled = new AtomicBoolean(callbackPreinstalled);
+		AtomicBoolean selected = new AtomicBoolean();
+		doAnswer(call -> {
+			if (injected != null && injected.selected.compareAndSet(false, true)) {
+				selected.set(true);
+				throw injected.setupFailure;
+			}
+			callbackInstalled.set(true);
+			return call.callRealMethod();
+		}).when(cursor).cancellationPoll(any(Runnable.class));
+		doAnswer(call -> {
+			Object result = call.callRealMethod();
+			if (selected.get()) {
+				injected.closes.incrementAndGet();
+				throw injected.closeFailure;
+			}
+			return result;
+		}).when(cursor).close();
+		doAnswer(call -> {
+			physicalFills.incrementAndGet();
+			assertThat(callbackInstalled).as("physical root fill is cancellation-aware").isTrue();
+			boolean trigger = deadline != null && mayTrigger && deadline.tripInCurrentWorker();
+			try {
+				Object result = call.callRealMethod();
+				if (trigger) {
+					throw new AssertionError("physical root fill did not observe the active attempt deadline");
+				}
+				return result;
+			} catch (LmdbNativeProbeDeadlineExceeded expired) {
+				if (deadline != null) {
+					deadline.observed.set(true);
+				}
+				throw expired;
+			}
+		}).when(cursor).fillRootCounts(any(long[].class), anyInt(), any(long[].class), anyInt(), anyInt());
+		return cursor;
+	}
+
+	private static final class WorkerCursorFailure {
+		final AtomicBoolean selected = new AtomicBoolean();
+		final AtomicInteger closes = new AtomicInteger();
+		final IllegalStateException setupFailure = new IllegalStateException("injected root cursor setup failure");
+		final IllegalStateException closeFailure = new IllegalStateException("injected root cursor close failure");
+	}
+
+	private static final class WorkerProbeDeadline {
+		final LmdbNativeProbeDeadline value = spy(LmdbNativeProbeDeadline.trippableOnly());
+		final AtomicReference<Thread> triggeringWorker = new AtomicReference<>();
+		final AtomicBoolean observed = new AtomicBoolean();
+
+		WorkerProbeDeadline() {
+			// Let the physical callback observe expiration before a peer can cancel the worker group.
+			doAnswer(call -> (observed.get() || Thread.currentThread() == triggeringWorker.get())
+					&& (boolean) call.callRealMethod()).when(value).expired();
+		}
+
+		boolean tripInCurrentWorker() {
+			if (!triggeringWorker.compareAndSet(null, Thread.currentThread())) {
+				return false;
+			}
+			value.trip();
+			return true;
+		}
+	}
+
+	private static WildcardAdjacency recordingWildcardRoots(WildcardAdjacency actual, AtomicInteger rootOpens) {
+		if (actual == null) {
+			return null;
+		}
+		WildcardAdjacency observed = spy(actual);
+		doAnswer(call -> {
+			rootOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(observed).openKeyRunCursor();
+		doAnswer(call -> {
+			rootOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(observed).openKeyRunCursor(anyLong(), anyLong());
+		return observed;
+	}
+
+	private static NativeAdjacency recordingPlaneRoots(NativeAdjacency actual, AtomicInteger rootOpens) {
+		if (actual == null) {
+			return null;
+		}
+		NativeAdjacency observed = spy(actual);
+		doAnswer(call -> {
+			rootOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(observed).openKeyRunCursor();
+		doAnswer(call -> {
+			rootOpens.incrementAndGet();
+			return call.callRealMethod();
+		}).when(observed).openKeyRunCursor(anyLong(), anyLong());
+		return observed;
+	}
+
+	private void assertForcedHistogramRoute(String requested, String expected, boolean parallel,
+			List<BindingSet> reference) {
+		long runsBefore = LmdbNativeRunCountHistogram.RUNS.get();
+		long mergesBefore = LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get();
+		List<String> selected = new ArrayList<>();
+		LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+			if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+					&& record.point() == LmdbNativeDecisionPoint.GROUP) {
+				selected.add(id);
+			}
+		});
+		List<BindingSet> rows;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			SailTupleQuery query = (SailTupleQuery) connection.prepareTupleQuery(OUT_DEGREE_HISTOGRAM);
+			query.setForcedLmdbExecutionStrategy(requested);
+			rows = QueryResults.asList(query.evaluate());
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+		}
+		assertThat(rows).as("forced request %s retains the full RDF binding sequence", requested)
+				.containsExactlyElementsOf(reference);
+		assertThat(selected).as("forced request %s accepts the expected outer GROUP recipe", requested)
+				.containsExactly(expected);
+		if (expected.startsWith("runCountHistogram")) {
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isGreaterThan(runsBefore);
+		} else {
+			assertThat(LmdbNativeRunCountHistogram.RUNS.get()).isEqualTo(runsBefore);
+		}
+		if (parallel) {
+			assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isGreaterThan(mergesBefore);
+		} else {
+			assertThat(LmdbNativeRunCountHistogram.PARALLEL_ADJACENCY_MERGES.get()).isEqualTo(mergesBefore);
+		}
+	}
+
+	private void assertNestedHistogramVariants() {
+		String query = "SELECT (SUM(?subjects) AS ?total) WHERE { { " + OUT_DEGREE_HISTOGRAM + " } }";
+		List<BindingSet> reference;
+		String previousNative = System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", "false");
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			reference = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+		} finally {
+			if (previousNative == null) {
+				System.clearProperty("rdf4j.lmdb.nativeQueryEngine.enabled");
+			} else {
+				System.setProperty("rdf4j.lmdb.nativeQueryEngine.enabled", previousNative);
+			}
+		}
+		assertThat(reference).hasSize(1);
+		assertThat(((Literal) reference.getFirst().getValue("total")).longValue()).isEqualTo(2L);
+		List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+		List<String> selected = new ArrayList<>();
+		LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+			if (target instanceof Group group && group.getGroupBindingNames().equals(Set.of("outDegree"))
+					&& record.point() == LmdbNativeDecisionPoint.GROUP_PHYSICAL) {
+				decisions.add(record);
+				selected.add(id);
+			}
+		});
+		List<BindingSet> actual;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			actual = QueryResults.asList(connection.prepareTupleQuery(query).evaluate());
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+		}
+		assertThat(actual).containsExactlyElementsOf(reference);
+		assertThat(selected).as("the nested physical GROUP executes the serial histogram")
+				.containsExactly("runCountHistogram(serial)");
+		assertThat(decisions).hasSize(1);
+		assertThat(decisions.getFirst().entries()).filteredOn(entry -> entry.id().equals("runCountHistogram"))
+				.singleElement()
+				.satisfies(entry -> assertThat(entry.priceable()).isTrue());
+		assertThat(decisions.getFirst().entries()).filteredOn(entry -> entry.id().equals("runCountHistogram(serial)"))
+				.singleElement()
+				.satisfies(entry -> assertThat(entry.priceable()).isTrue());
+	}
+
 	private List<String> histogramRows(String query) {
 		List<String> rows = new ArrayList<>();
 		try (SailRepositoryConnection conn = repository.getConnection()) {
@@ -323,6 +4475,26 @@ public class LmdbRunCountHistogramTest {
 			}
 		}
 		return rows;
+	}
+
+	private List<String> histogramRows(String query, String forcedStrategy) {
+		List<String> rows = new ArrayList<>();
+		try (SailRepositoryConnection conn = repository.getConnection()) {
+			SailTupleQuery prepared = (SailTupleQuery) conn.prepareTupleQuery(query);
+			prepared.setForcedLmdbExecutionStrategy(forcedStrategy);
+			for (BindingSet bs : QueryResults.asList(prepared.evaluate())) {
+				rows.add(((Literal) bs.getValue("outDegree")).longValue() + "="
+						+ ((Literal) bs.getValue("subjects")).longValue());
+			}
+		}
+		return rows;
+	}
+
+	private List<String> histogramRows(List<BindingSet> bindings) {
+		return bindings.stream()
+				.map(bs -> ((Literal) bs.getValue("outDegree")).longValue() + "="
+						+ ((Literal) bs.getValue("subjects")).longValue())
+				.toList();
 	}
 
 	private List<BindingSet> evaluate(QueryEvaluationStep step) {

@@ -16,16 +16,70 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 import static org.junit.jupiter.api.Assertions.assertAll;
 
 import java.io.IOException;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Supplier;
 
 import org.eclipse.rdf4j.query.QueryEvaluationException;
+import org.eclipse.rdf4j.query.explanation.Explanation;
+import org.eclipse.rdf4j.query.explanation.QueryExplanationContext;
+import org.eclipse.rdf4j.query.impl.EmptyBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.Test;
 
 class LmdbNativeDispatchLoopEdgeCaseTest {
+
+	@Test
+	void explicitlyForcedPartialCandidateRemainsExecutable() throws IOException {
+		AtomicInteger partialOpens = new AtomicInteger();
+		LmdbNativeCandidate<String> partial = partialCandidate("partial", () -> {
+			partialOpens.incrementAndGet();
+			return "partial-result";
+		}, () -> {
+		});
+		LmdbNativeCandidate<String> complete = candidate("complete", 100D, () -> "complete-result", () -> {
+		});
+		var loop = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(partial), strategy(complete)), null).forcing("partial");
+		var selected = loop.dispatch(null);
+		assertThat(selected.id()).isEqualTo("partial");
+		assertThat(selected.value()).isEqualTo("partial-result");
+		assertThat(partialOpens).hasValue(1);
+		assertThat(selected.expectedNanos()).isNaN();
+		assertThat(selected.record().describe("forced partial")).containsIgnoringCase("unpriced");
+	}
+
+	@Test
+	void completeDeclineFallsBackToPartialWithoutLeakingTheAttempt() throws IOException {
+		List<String> opened = new ArrayList<>();
+		AtomicInteger completeReleases = new AtomicInteger();
+		LmdbNativeCandidate<String> complete = candidate("complete", 100D, () -> {
+			opened.add("complete");
+			return null;
+		}, completeReleases::incrementAndGet);
+		LmdbNativeCandidate<String> partial = partialCandidate("partial", () -> {
+			opened.add("partial");
+			return "partial-result";
+		}, () -> {
+		});
+		var loop = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(partial), strategy(complete)), null);
+		var selected = loop.dispatch(null);
+		assertThat(opened).containsExactly("complete", "partial");
+		assertThat(selected.id()).isEqualTo("partial");
+		assertThat(selected.value()).isEqualTo("partial-result");
+		assertThat(selected.record().mode()).contains("retry");
+		assertThat(selected.expectedNanos()).isNaN();
+		assertThat(selected.record().describe("fallback")).containsIgnoringCase("unpriced");
+		assertThat(completeReleases).hasValue(1);
+	}
 
 	@Test
 	void admissionFailureReleasesPreviouslyAdmittedCandidates() {
@@ -285,7 +339,793 @@ class LmdbNativeDispatchLoopEdgeCaseTest {
 		assertThat(catchThrowable(() -> loop.dispatch(null))).isSameAs(refusal);
 	}
 
-	private static LmdbNativeStrategy<Void, String> strategy(LmdbNativeCandidate<String> candidate) {
+	@Test
+	void costlierInterpretedSiblingPrecedesAnUnrelatedCandidateWithRecordedRetryTelemetry() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("two-pattern-row-kernel", 0, 1);
+		LmdbNativeCandidate.KernelSibling compiledRecipe = kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED);
+		LmdbNativeCandidate.KernelSibling interpretedRecipe = kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				scope, recipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED);
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("open compiled");
+			return null;
+		}, () -> events.add("release compiled"), compiledRecipe);
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+			events.add("open ordinary");
+			return null;
+		}, () -> events.add("release ordinary"));
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			events.add("open interpreted");
+			return "interpreted-result";
+		}, () -> events.add("release interpreted"), interpretedRecipe);
+		List<LmdbNativeDecisionRecord> records = new ArrayList<>();
+		LmdbNativeDispatchLoop.observeDecisions((record, label) -> records.add(record));
+		LmdbNativeDispatchLoop.Selection<String> selected;
+		try {
+			selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+					List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null);
+		} finally {
+			LmdbNativeDispatchLoop.observeDecisions(null);
+		}
+
+		assertAll("the matching interpreter is tried immediately after its compiled peer declines",
+				() -> assertThat(events).containsExactly("open compiled", "release compiled", "open interpreted",
+						"release ordinary"),
+				() -> assertThat(selected.id()).isEqualTo(interpreted.id()),
+				() -> assertThat(selected.value()).isEqualTo("interpreted-result"),
+				() -> assertThat(records).hasSize(2),
+				() -> assertThat(records.getFirst().winnerId()).isEqualTo(compiled.id()),
+				() -> assertThat(records.getFirst().entries()).extracting(LmdbNativeDecisionRecord.Entry::expectedNanos)
+						.containsExactly(251D, 252D, 350D),
+				() -> assertThat(selected.record().entries()).filteredOn(LmdbNativeDecisionRecord.Entry::admitted)
+						.extracting(LmdbNativeDecisionRecord.Entry::expectedNanos)
+						.containsExactly(252D, 350D),
+				() -> assertThat(selected.record().mode()).isEqualTo("retry interpreted sibling"),
+				() -> assertThat(selected.record().winnerId()).isEqualTo(interpreted.id()),
+				() -> assertThat(selected.record().reason())
+						.isEqualTo("Interpreted sibling of irKernel(shape) after its opening declined"));
+	}
+
+	@Test
+	void expensiveParallelSiblingBypassesItsFourWorkerPriceCutAfterCompiledDecline() throws IOException {
+		String previousThreads = System.getProperty("rdf4j.lmdb.parallel.threads");
+		String previousTasks = System.getProperty("rdf4j.lmdb.parallel.maxTasks");
+		System.setProperty("rdf4j.lmdb.parallel.threads", "4");
+		System.setProperty("rdf4j.lmdb.parallel.maxTasks", "4");
+		try {
+			Object scope = new Object();
+			Object recipe = List.of("parallel-four-worker-row");
+			List<String> events = new ArrayList<>();
+			LmdbNativeCandidate<String> compiled = kernelCandidate("irKernelParallel(shape)", 1D, () -> {
+				events.add("open compiled parallel");
+				return null;
+			}, () -> events.add("release compiled parallel"), kernelSibling(
+					LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 4,
+					LmdbNativeCandidate.KernelTier.COMPILED));
+			LmdbNativeCandidate<String> ordinary = candidate("serialRival", 1_000_000D, () -> {
+				events.add("open serial rival");
+				return "serial";
+			}, () -> events.add("release serial rival"));
+			LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelParallelInterpreted(shape)", 2_000_000D,
+					() -> {
+						events.add("open interpreted parallel");
+						return "parallel-interpreter";
+					}, () -> events.add("release interpreted parallel"), kernelSibling(
+							LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 4,
+							LmdbNativeCandidate.KernelTier.INTERPRETED));
+			List<LmdbNativeDecisionRecord> records = new ArrayList<>();
+			LmdbNativeDispatchLoop.observeDecisions((record, label) -> records.add(record));
+			LmdbNativeDispatchLoop.Selection<String> selected;
+			try {
+				selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+						List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null);
+			} finally {
+				LmdbNativeDispatchLoop.observeDecisions(null);
+			}
+
+			LmdbNativeDecisionRecord.Entry ordinaryEntry = selected.record()
+					.entries()
+					.stream()
+					.filter(LmdbNativeDecisionRecord.Entry::admitted)
+					.filter(entry -> entry.id().equals(ordinary.id()))
+					.findFirst()
+					.orElseThrow();
+			LmdbNativeDecisionRecord.Entry interpretedEntry = selected.record()
+					.entries()
+					.stream()
+					.filter(LmdbNativeDecisionRecord.Entry::admitted)
+					.filter(entry -> entry.id().equals(interpreted.id()))
+					.findFirst()
+					.orElseThrow();
+			assertAll("the matching parallel tier is retried despite its genuine four-worker price cut",
+					() -> assertThat(events).containsExactly("open compiled parallel", "release compiled parallel",
+							"open interpreted parallel", "release serial rival"),
+					() -> assertThat(records).hasSize(2),
+					() -> assertThat(records.getFirst().winnerId()).isEqualTo(compiled.id()),
+					() -> assertThat(records.getFirst().entries())
+							.extracting(LmdbNativeDecisionRecord.Entry::expectedNanos)
+							.containsExactly(251D, 1_000_250D, 2_000_250D),
+					() -> assertThat(selected.id()).isEqualTo(interpreted.id()),
+					() -> assertThat(interpretedEntry.expectedNanos()).isGreaterThan(ordinaryEntry.expectedNanos()),
+					() -> assertThat(interpretedEntry.expectedNanos()).isEqualTo(2_000_250D),
+					() -> assertThat(selected.record().reason())
+							.contains("bypassed price exclusion: Parallel: expected 2000250 ns"));
+		} finally {
+			restoreProperty("rdf4j.lmdb.parallel.threads", previousThreads);
+			restoreProperty("rdf4j.lmdb.parallel.maxTasks", previousTasks);
+		}
+	}
+
+	@Test
+	void unpricedInterpretedSiblingStillGetsItsImmediateRetryWithRecordedUnpricedTelemetry() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("distinct-row-kernel", 1);
+		LmdbNativeCandidate.KernelSibling compiledRecipe = kernelSibling(LmdbNativeCandidate.KernelFamily.DISTINCT_ROW,
+				scope, recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED);
+		LmdbNativeCandidate.KernelSibling interpretedRecipe = kernelSibling(
+				LmdbNativeCandidate.KernelFamily.DISTINCT_ROW, scope, recipe, 1,
+				LmdbNativeCandidate.KernelTier.INTERPRETED);
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernelDistinct(shape)", 1D, () -> {
+			events.add("open compiled");
+			return null;
+		}, () -> events.add("release compiled"), compiledRecipe);
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+			events.add("open ordinary");
+			return null;
+		}, () -> events.add("release ordinary"));
+		LmdbNativeCandidate<String> interpreted = partialCandidate("irKernelDistinctInterpreted(shape)", () -> {
+			events.add("open interpreted");
+			return "unpriced-result";
+		}, () -> events.add("release interpreted")).withKernelSibling(interpretedRecipe);
+
+		LmdbNativeDispatchLoop.Selection<String> selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null);
+
+		LmdbNativeDecisionRecord.Entry interpretedEntry = selected.record()
+				.entries()
+				.stream()
+				.filter(entry -> entry.id().equals(interpreted.id()))
+				.findFirst()
+				.orElseThrow();
+		assertAll("unpriced does not erase an explicit compiled/interpreted recipe match",
+				() -> assertThat(events).containsExactly("open compiled", "release compiled", "open interpreted",
+						"release ordinary"),
+				() -> assertThat(selected.id()).isEqualTo(interpreted.id()),
+				() -> assertThat(selected.expectedNanos()).isNaN(),
+				() -> assertThat(selected.record().mode()).isEqualTo("retry interpreted sibling"),
+				() -> assertThat(interpretedEntry.priceable()).isFalse(),
+				() -> assertThat(interpretedEntry.expectedNanos()).isNaN(),
+				() -> assertThat(interpretedEntry.missingPhysicalWork()).isEqualTo("unproved reducer work"),
+				() -> assertThat(selected.record().reason())
+						.contains("bypassed price exclusion: Unpriced: complete work"));
+	}
+
+	@Test
+	void noPeerOrAnyRecipeMismatchKeepsOrdinaryReRanking() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("root-shared-row", 0, 2);
+		LmdbNativeCandidate.KernelSibling compiledRecipe = kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED);
+		List<PeerCase> cases = List.of(
+				new PeerCase("no peer", null, "irKernelInterpreted(shape)"),
+				new PeerCase("wrong family",
+						kernelSibling(LmdbNativeCandidate.KernelFamily.DISTINCT_ROW, scope, recipe, 1,
+								LmdbNativeCandidate.KernelTier.INTERPRETED),
+						"irKernelInterpreted(shape)"),
+				new PeerCase("wrong scope identity", kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, new Object(),
+						recipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED), "irKernelInterpreted(shape)"),
+				new PeerCase("wrong recipe", kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+						List.of("different-lowered-input"), 1, LmdbNativeCandidate.KernelTier.INTERPRETED),
+						"irKernelInterpreted(shape)"),
+				new PeerCase("wrong worker grant", kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 2,
+						LmdbNativeCandidate.KernelTier.INTERPRETED), "irKernelInterpreted(shape)"),
+				new PeerCase("wrong variant suffix",
+						kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+								LmdbNativeCandidate.KernelTier.INTERPRETED),
+						"irKernelInterpreted(other)"));
+
+		for (PeerCase peerCase : cases) {
+			List<String> events = new ArrayList<>();
+			LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+				events.add("open compiled");
+				return null;
+			}, () -> events.add("release compiled"), compiledRecipe);
+			LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+				events.add("open ordinary");
+				return null;
+			}, () -> events.add("release ordinary"));
+			LmdbNativeCandidate<String> interpreted = peerCase.sibling() == null
+					? candidate(peerCase.candidateId(), 100D, () -> {
+						events.add("open interpreted");
+						return "ordinary-retry";
+					}, () -> events.add("release interpreted"))
+					: kernelCandidate(peerCase.candidateId(), 100D, () -> {
+						events.add("open interpreted");
+						return "ordinary-retry";
+					}, () -> events.add("release interpreted"), peerCase.sibling());
+
+			LmdbNativeDispatchLoop.Selection<String> selected = new LmdbNativeDispatchLoop<>(
+					LmdbNativeDecisionPoint.ROW,
+					List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null);
+
+			assertAll(peerCase.name(),
+					() -> assertThat(events).containsExactly("open compiled", "release compiled", "open ordinary",
+							"release ordinary", "open interpreted"),
+					() -> assertThat(selected.id()).isEqualTo(interpreted.id()),
+					() -> assertThat(selected.record().mode()).isEqualTo("retry normal"));
+		}
+	}
+
+	@Test
+	void ambiguousInterpretedPeersDoNotBypassOrdinaryRanking() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("ambiguous-recipe");
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("open compiled");
+			return null;
+		}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+			events.add("open ordinary");
+			return null;
+		}, () -> events.add("release ordinary"));
+		LmdbNativeCandidate<String> first = kernelCandidate("irKernelInterpretedA(shape)", 100D, () -> {
+			events.add("open first interpreter");
+			return "first";
+		}, () -> events.add("release first interpreter"),
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+		LmdbNativeCandidate<String> second = kernelCandidate("irKernelInterpretedB(shape)", 200D, () -> {
+			events.add("open second interpreter");
+			return "second";
+		}, () -> events.add("release second interpreter"),
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+
+		LmdbNativeDispatchLoop.Selection<String> selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(ordinary), strategy(first), strategy(second)), null)
+						.dispatch(null);
+
+		assertAll("multiple matching peers are ambiguous, so the ordinary price order remains authoritative",
+				() -> assertThat(events).containsExactly("open compiled", "release compiled", "open ordinary",
+						"release ordinary", "open first interpreter", "release second interpreter"),
+				() -> assertThat(selected.id()).isEqualTo(first.id()),
+				() -> assertThat(selected.record().mode()).isEqualTo("retry normal"));
+	}
+
+	@Test
+	void structuralDominanceVetoesAnOtherwiseMatchingInterpretedSibling() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("structural-recipe");
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("open compiled");
+			return null;
+		}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> dominator = candidate("structuralWinner", 2D, () -> {
+			events.add("open structural winner");
+			return "structural-result";
+		}, () -> events.add("release structural winner"))
+				.dominating(Set.of("irKernelInterpreted(shape)"));
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			events.add("open interpreted");
+			return "interpreted";
+		}, () -> events.add("release interpreted"),
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+
+		LmdbNativeDispatchLoop.Selection<String> selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(dominator), strategy(interpreted)), null).dispatch(null);
+
+		assertAll(() -> assertThat(events).containsExactly("open compiled", "release compiled",
+				"open structural winner", "release interpreted"),
+				() -> assertThat(selected.id()).isEqualTo(dominator.id()),
+				() -> assertThat(selected.record().entries()).filteredOn(entry -> entry.id().equals(interpreted.id()))
+						.singleElement()
+						.extracting(LmdbNativeDecisionRecord.Entry::eliminatedBy)
+						.isEqualTo("Structurally dominated by structuralWinner"));
+	}
+
+	@Test
+	void lastResortVetoesAnOtherwiseMatchingInterpretedSibling() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("last-resort-recipe");
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("open compiled");
+			return null;
+		}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+			events.add("open ordinary");
+			return "ordinary-result";
+		}, () -> events.add("release ordinary"));
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			events.add("open interpreted");
+			return "interpreted";
+		}, () -> events.add("release interpreted"),
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED)).asLastResort();
+
+		LmdbNativeDispatchLoop.Selection<String> selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null);
+
+		assertAll(() -> assertThat(events).containsExactly("open compiled", "release compiled", "open ordinary",
+				"release interpreted"),
+				() -> assertThat(selected.id()).isEqualTo(ordinary.id()),
+				() -> assertThat(selected.record().entries()).filteredOn(entry -> entry.id().equals(interpreted.id()))
+						.singleElement()
+						.extracting(LmdbNativeDecisionRecord.Entry::eliminatedBy)
+						.isEqualTo("Last resort: considered only when no ordinary candidate is admitted"));
+	}
+
+	@Test
+	void declinedInterpretedSiblingIsNotRetriedBeforeTheOrdinaryLadder() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("one-retry-only");
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("open compiled");
+			return null;
+		}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			events.add("open interpreted");
+			return null;
+		}, () -> events.add("release interpreted"),
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+			events.add("open ordinary");
+			return "ordinary-result";
+		}, () -> events.add("release ordinary"));
+
+		LmdbNativeDispatchLoop.Selection<String> selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(interpreted), strategy(ordinary)), null).dispatch(null);
+
+		assertAll(() -> assertThat(events).containsExactly("open compiled", "release compiled", "open interpreted",
+				"release interpreted", "open ordinary"),
+				() -> assertThat(selected.id()).isEqualTo(ordinary.id()),
+				() -> assertThat(selected.record().mode()).isEqualTo("retry normal"));
+	}
+
+	@Test
+	void compiledDeclineReleaseFailurePropagatesBeforeItsInterpretedSiblingOpens() {
+		Object scope = new Object();
+		Object recipe = List.of("release-before-retry");
+		IllegalStateException releaseFailure = new IllegalStateException("compiled decline release failed");
+		AtomicInteger compiledReleases = new AtomicInteger();
+		AtomicInteger interpretedOpens = new AtomicInteger();
+		AtomicInteger interpretedReleases = new AtomicInteger();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> null, () -> {
+			compiledReleases.incrementAndGet();
+			throw releaseFailure;
+		}, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+				LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			interpretedOpens.incrementAndGet();
+			return "must-not-open";
+		}, interpretedReleases::incrementAndGet, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+				LmdbNativeCandidate.KernelTier.INTERPRETED));
+
+		Throwable actual = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(interpreted)), null).dispatch(null));
+
+		assertAll(() -> assertThat(actual).isSameAs(releaseFailure),
+				() -> assertThat(compiledReleases).hasValue(1),
+				() -> assertThat(interpretedOpens).hasValue(0),
+				() -> assertThat(interpretedReleases).hasValue(1));
+	}
+
+	@Test
+	void siblingRetryRestoresARowStateAfterARealBindAndRollback() throws IOException {
+		LmdbNativePackedParallelQuoteOwnershipTest.SnapshotSource source = new LmdbNativePackedParallelQuoteOwnershipTest.SnapshotSource();
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0), null);
+		layout.freeze(List.of("s"));
+		RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+		row.slots[0] = LmdbNativeAggregateCompiler.UNKNOWN;
+		row.recomputeBoundMask();
+		long[] originalSlots = row.slots.clone();
+		long originalMask = row.boundMask();
+		Object scope = new Object();
+		Object recipe = List.of("row-state-bind-rollback");
+		List<String> events = new ArrayList<>();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("bind compiled");
+			assertThat(row.bind(0, 77L)).isTrue();
+			return null;
+		}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+				LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			events.add("open interpreted");
+			assertThat(row.slots).containsExactly(originalSlots);
+			assertThat(row.boundMask()).isEqualTo(originalMask);
+			assertThat(row.mark()).isZero();
+			return "restored-row";
+		}, () -> events.add("release interpreted"),
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+		try {
+			var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+					List.of(strategy(compiled), strategy(interpreted)), null).sharedRow(row).dispatch(null);
+
+			assertAll(() -> assertThat(events).containsExactly("bind compiled", "release compiled", "open interpreted"),
+					() -> assertThat(selected.value()).isEqualTo("restored-row"),
+					() -> assertThat(row.slots).containsExactly(originalSlots),
+					() -> assertThat(row.boundMask()).isEqualTo(originalMask),
+					() -> assertThat(row.mark()).isZero());
+		} finally {
+			row.closeDecodedInputs();
+			row.memoryScope.close();
+		}
+	}
+
+	@Test
+	void siblingRetryPropagatesIoQueryAndCancellationFailuresWithoutTryingAnotherCandidate() {
+		IOException ioFailure = new IOException("interpreter cursor open failed");
+		QueryEvaluationException queryFailure = new QueryEvaluationException("interpreter query failed");
+		KernelQueryCancelledException cancellation = KernelQueryCancelledException.INSTANCE;
+		for (Throwable expected : List.of(ioFailure, queryFailure, cancellation)) {
+			Object scope = new Object();
+			Object recipe = List.of("failure-propagation", expected.getClass().getName());
+			List<String> events = new ArrayList<>();
+			LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+				events.add("open compiled");
+				return null;
+			}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+					scope, recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+			LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+				events.add("open ordinary");
+				return "ordinary";
+			}, () -> events.add("release ordinary"));
+			LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+				events.add("open interpreted");
+				if (expected instanceof IOException io) {
+					throw io;
+				}
+				throw (RuntimeException) expected;
+			}, () -> events.add("release interpreted"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+					scope, recipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED));
+
+			Throwable actual = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+					List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null));
+
+			assertAll(expected.getClass().getSimpleName(),
+					() -> assertThat(actual).isSameAs(expected),
+					() -> assertThat(events).containsExactly("open compiled", "release compiled", "open interpreted",
+							"release ordinary", "release interpreted"));
+		}
+	}
+
+	@Test
+	void siblingRetryPreservesCleanupFailuresAndBudgetRefusalBoundaries() throws IOException {
+		Object cleanupScope = new Object();
+		Object cleanupRecipe = List.of("cleanup-propagation");
+		IOException openFailure = new IOException("interpreter bind failed");
+		IllegalStateException cleanupFailure = new IllegalStateException("unused ordinary cleanup failed");
+		AtomicInteger ordinaryReleases = new AtomicInteger();
+		AtomicInteger interpretedReleases = new AtomicInteger();
+		LmdbNativeCandidate<String> compiled = kernelCandidate("irKernel(shape)", 1D, () -> null, () -> {
+		}, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, cleanupScope, cleanupRecipe, 1,
+				LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> "ordinary", () -> {
+			ordinaryReleases.incrementAndGet();
+			throw cleanupFailure;
+		});
+		LmdbNativeCandidate<String> interpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			throw openFailure;
+		}, interpretedReleases::incrementAndGet,
+				kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, cleanupScope, cleanupRecipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+		Throwable cleanupActual = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null));
+
+		Object budgetScope = new Object();
+		Object budgetRecipe = List.of("budget-retry");
+		AtomicInteger budgetInterpreterOpens = new AtomicInteger();
+		LmdbNativeCandidate<String> authorizedCompiled = kernelCandidate("irKernel(budget)", 1D, () -> {
+			throw new KernelRuntime.AllocationDeniedException();
+		}, () -> {
+		}, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, budgetScope, budgetRecipe, 1,
+				LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> authorizedInterpreter = kernelCandidate("irKernelInterpreted(budget)", 100D, () -> {
+			budgetInterpreterOpens.incrementAndGet();
+			return "authorized-retry";
+		}, () -> {
+		}, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, budgetScope, budgetRecipe, 1,
+				LmdbNativeCandidate.KernelTier.INTERPRETED));
+		var authorized = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(authorizedCompiled), strategy(authorizedInterpreter)), null)
+						.budgetRefusals(true)
+						.dispatch(null);
+
+		Object forbiddenScope = new Object();
+		Object forbiddenRecipe = List.of("budget-forbidden");
+		AtomicInteger forbiddenInterpreterOpens = new AtomicInteger();
+		LmdbNativeCandidate<String> forbiddenCompiled = kernelCandidate("irKernel(forbidden)", 1D, () -> {
+			throw new KernelRuntime.AllocationDeniedException();
+		}, () -> {
+		}, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, forbiddenScope, forbiddenRecipe, 1,
+				LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> forbiddenInterpreter = kernelCandidate("irKernelInterpreted(forbidden)", 100D,
+				() -> {
+					forbiddenInterpreterOpens.incrementAndGet();
+					return "forbidden-retry";
+				}, () -> {
+				}, kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, forbiddenScope, forbiddenRecipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+		Throwable forbiddenActual = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(forbiddenCompiled), strategy(forbiddenInterpreter)), null)
+						.budgetRefusals(false)
+						.dispatch(null));
+
+		assertAll("sibling retry preserves failures and honors each site's budget policy",
+				() -> assertThat(cleanupActual).isSameAs(openFailure),
+				() -> assertThat(openFailure.getSuppressed()).containsExactly(cleanupFailure),
+				() -> assertThat(ordinaryReleases).hasValue(1),
+				() -> assertThat(interpretedReleases).hasValue(1),
+				() -> assertThat(authorized.id()).isEqualTo(authorizedInterpreter.id()),
+				() -> assertThat(authorized.value()).isEqualTo("authorized-retry"),
+				() -> assertThat(budgetInterpreterOpens).hasValue(1),
+				() -> assertThat(forbiddenActual).isInstanceOf(QueryEvaluationException.class)
+						.hasMessageContaining("memory budget"),
+				() -> assertThat(forbiddenInterpreterOpens).hasValue(0));
+	}
+
+	@Test
+	void strictForceAndSoftPreferenceKeepTheirSiblingOrderingContracts() throws IOException {
+		Object strictScope = new Object();
+		Object strictRecipe = List.of("strict-force");
+		List<String> strictEvents = new ArrayList<>();
+		LmdbNativeCandidate<String> strictCompiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			strictEvents.add("open compiled");
+			return null;
+		}, () -> strictEvents.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				strictScope, strictRecipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> strictInterpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			strictEvents.add("open interpreted");
+			return "interpreter";
+		}, () -> strictEvents.add("release interpreted"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				strictScope, strictRecipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED));
+		Throwable strictFailure = catchThrowable(() -> new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(strictCompiled), strategy(strictInterpreted)), null).forcing("irKernel(shape)")
+						.dispatch(null));
+
+		Object softScope = new Object();
+		Object softRecipe = List.of("soft-preference");
+		List<String> softEvents = new ArrayList<>();
+		LmdbNativeCandidate<String> softCompiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			softEvents.add("open compiled");
+			return null;
+		}, () -> softEvents.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				softScope, softRecipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> ordinary = candidate("ordinary", 2D, () -> {
+			softEvents.add("open ordinary");
+			return "ordinary";
+		}, () -> softEvents.add("release ordinary"));
+		LmdbNativeCandidate<String> softInterpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			softEvents.add("open interpreted");
+			return "interpreter";
+		}, () -> softEvents.add("release interpreted"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				softScope, softRecipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED));
+		var soft = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(softCompiled), strategy(ordinary), strategy(softInterpreted)), null)
+						.forcing("irKernel(shape),irKernelInterpreted(shape)")
+						.dispatch(null);
+
+		assertAll("strict force excludes the interpreter; soft preference retries the listed interpreter first",
+				() -> assertThat(strictFailure).isInstanceOf(QueryEvaluationException.class),
+				() -> assertThat(strictEvents).containsExactly("release interpreted", "open compiled",
+						"release compiled"),
+				() -> assertThat(softEvents).containsExactly("open compiled", "release compiled", "open interpreted",
+						"release ordinary"),
+				() -> assertThat(soft.id()).isEqualTo(softInterpreted.id()),
+				() -> assertThat(soft.record().mode()).isEqualTo("retry forced"));
+	}
+
+	@Test
+	void previewAndQuotedChoiceReleaseCandidatesWithoutOpeningOrApplyingSiblingRetry() throws IOException {
+		Object previewScope = new Object();
+		Object previewRecipe = List.of("preview-only");
+		List<String> previewEvents = new ArrayList<>();
+		LmdbNativeCandidate<String> previewCompiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			previewEvents.add("open compiled");
+			return null;
+		}, () -> previewEvents.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				previewScope, previewRecipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> previewOrdinary = candidate("ordinary", 2D, () -> {
+			previewEvents.add("open ordinary");
+			return "ordinary";
+		}, () -> previewEvents.add("release ordinary"));
+		LmdbNativeCandidate<String> previewInterpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			previewEvents.add("open interpreted");
+			return "interpreter";
+		}, () -> previewEvents.add("release interpreted"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				previewScope, previewRecipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED));
+		LmdbNativeDecisionRecord preview;
+		try (QueryExplanationContext ignored = QueryExplanationContext.enter(Explanation.Level.Optimized)) {
+			preview = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+					List.of(strategy(previewCompiled), strategy(previewOrdinary), strategy(previewInterpreted)), null)
+							.preview(null);
+		}
+
+		Object quoteScope = new Object();
+		Object quoteRecipe = List.of("quote-only");
+		List<String> quoteEvents = new ArrayList<>();
+		LmdbNativeCandidate<String> quoteCompiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			quoteEvents.add("open compiled");
+			return null;
+		}, () -> quoteEvents.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				quoteScope, quoteRecipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<String> quoteOrdinary = candidate("ordinary", 2D, () -> {
+			quoteEvents.add("open ordinary");
+			return "ordinary";
+		}, () -> quoteEvents.add("release ordinary"));
+		LmdbNativeCandidate<String> quoteInterpreted = kernelCandidate("irKernelInterpreted(shape)", 100D, () -> {
+			quoteEvents.add("open interpreted");
+			return "interpreter";
+		}, () -> quoteEvents.add("release interpreted"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				quoteScope, quoteRecipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED));
+		LmdbNativeCandidate<String> quoted = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(quoteCompiled), strategy(quoteOrdinary), strategy(quoteInterpreted)), null)
+						.quotedChoice(null);
+		quoted.release().run();
+
+		assertAll(() -> assertThat(preview.winnerId()).isEqualTo(previewCompiled.id()),
+				() -> assertThat(previewEvents).containsExactly("release compiled", "release ordinary",
+						"release interpreted"),
+				() -> assertThat(quoteEvents).containsExactly("release ordinary", "release interpreted",
+						"release compiled"));
+	}
+
+	@Test
+	void aLazyOpenedValueThatEscapesCannotTriggerAnInterpretedRetryLater() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("lazy-result");
+		List<String> events = new ArrayList<>();
+		KernelQueryCancelledException cancellation = KernelQueryCancelledException.INSTANCE;
+		LmdbNativeCandidate<Supplier<String>> compiled = kernelCandidate("irKernel(shape)", 1D, () -> {
+			events.add("open compiled");
+			return () -> {
+				events.add("consume compiled");
+				throw cancellation;
+			};
+		}, () -> events.add("release compiled"), kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED));
+		LmdbNativeCandidate<Supplier<String>> ordinary = LmdbNativeCandidate.<Supplier<String>>of("ordinary",
+				LmdbNativeCostQuote.streaming(LmdbNativeCostVector.point(Feature.SCANNED_ROW, 2D), 1D), () -> {
+					events.add("open ordinary");
+					return () -> "ordinary";
+				}, () -> events.add("release ordinary"));
+		LmdbNativeCandidate<Supplier<String>> interpreted = LmdbNativeCandidate.<Supplier<String>>of(
+				"irKernelInterpreted(shape)",
+				LmdbNativeCostQuote.streaming(LmdbNativeCostVector.point(Feature.SCANNED_ROW, 100D), 1D), () -> {
+					events.add("open interpreted");
+					return () -> "interpreter";
+				}, () -> events.add("release interpreted"))
+				.withKernelSibling(kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope, recipe, 1,
+						LmdbNativeCandidate.KernelTier.INTERPRETED));
+		var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(strategy(compiled), strategy(ordinary), strategy(interpreted)), null).dispatch(null);
+		Throwable failure = catchThrowable(selected.value()::get);
+
+		assertAll(() -> assertThat(selected.id()).isEqualTo(compiled.id()),
+				() -> assertThat(failure).isSameAs(cancellation),
+				() -> assertThat(events).containsExactly("open compiled", "release ordinary", "release interpreted",
+						"consume compiled"));
+	}
+
+	@Test
+	void proposalMapAndCandidateCopiesRetainTheKernelSiblingRecipe() throws IOException {
+		Object scope = new Object();
+		Object recipe = List.of("mapped-row-input", 0, 1, 2);
+		LmdbNativeCandidate.KernelSibling compiledRecipe = kernelSibling(LmdbNativeCandidate.KernelFamily.ROW, scope,
+				recipe, 1, LmdbNativeCandidate.KernelTier.COMPILED);
+		LmdbNativeCandidate.KernelSibling interpretedRecipe = kernelSibling(LmdbNativeCandidate.KernelFamily.ROW,
+				scope, recipe, 1, LmdbNativeCandidate.KernelTier.INTERPRETED);
+		List<String> events = new ArrayList<>();
+		LmdbNativeStrategyProposal<String> source = new LmdbNativeStrategyProposal<>(() -> {
+			events.add("open mapped compiled");
+			return null;
+		}, 1D, "irKernel(shape)", () -> events.add("release mapped compiled"));
+		source.withCostQuote(LmdbNativeCostQuote.streaming(
+				LmdbNativeCostVector.point(Feature.SCANNED_ROW, 1D), 1D));
+		source.withKernelSibling(compiledRecipe);
+		LmdbNativeStrategyProposal<Integer> mapped = source.map(String::length, "irKernel(shape)");
+		LmdbNativeCandidate<Integer> copied = LmdbNativeStrategyProposal.candidate(mapped)
+				.withInputSpread(LmdbNativeRowSpread.EXACT)
+				.dominating(Set.of());
+		LmdbNativeCandidate<Integer> missingPhysicalWorkCopy = copied.withMissingPhysicalWork("test-only copy");
+		LmdbNativeCandidate<Integer> lastResortCopy = copied.asLastResort();
+		assertAll(() -> assertThat(mapped.kernelSibling()).isEqualTo(compiledRecipe),
+				() -> assertThat(copied.kernelSibling()).isEqualTo(compiledRecipe),
+				() -> assertThat(missingPhysicalWorkCopy.kernelSibling()).isEqualTo(compiledRecipe),
+				() -> assertThat(lastResortCopy.kernelSibling()).isEqualTo(compiledRecipe));
+		LmdbNativeCandidate<Integer> interpreted = LmdbNativeCandidate.of("irKernelInterpreted(shape)",
+				LmdbNativeCostQuote.streaming(LmdbNativeCostVector.point(Feature.SCANNED_ROW, 100D), 1D), () -> {
+					events.add("open interpreted");
+					return 17;
+				}, () -> events.add("release interpreted"))
+				.withKernelSibling(interpretedRecipe);
+		var selected = new LmdbNativeDispatchLoop<>(LmdbNativeDecisionPoint.ROW,
+				List.of(LmdbNativeStrategy.<Void, Integer>of(LmdbNativeDecisionPoint.ROW, copied.id(),
+						ignored -> LmdbNativeAdmission.of(copied)), strategy(interpreted)),
+				null).dispatch(null);
+
+		assertAll(() -> assertThat(events).containsExactly("open mapped compiled", "open interpreted"),
+				() -> assertThat(selected.id()).isEqualTo(interpreted.id()),
+				() -> assertThat(selected.value()).isEqualTo(17),
+				() -> assertThat(selected.record().mode()).isEqualTo("retry interpreted sibling"));
+	}
+
+	@Test
+	void variantConversionFailureReleasesEveryAcquiredProposal() {
+		List<String> events = new ArrayList<>();
+		IllegalStateException conversionFailure = new IllegalStateException("second quote failed");
+		IllegalStateException cleanupFailure = new IllegalStateException("second release failed");
+		List<LmdbNativeStrategyProposal<String>> proposals = List.of(
+				new LmdbNativeStrategyProposal<>(() -> "first", LmdbNativeWork.UNKNOWN, "first",
+						() -> events.add("release first")),
+				new LmdbNativeStrategyProposal<>(() -> "second", LmdbNativeWork.UNKNOWN, "second", () -> {
+					events.add("release second");
+					throw cleanupFailure;
+				}),
+				new LmdbNativeStrategyProposal<>(() -> "third", LmdbNativeWork.UNKNOWN, "third",
+						() -> events.add("release third")));
+		LmdbNativeOffers<String> offers = new LmdbNativeOffers<>(LmdbNativeDecisionPoint.GROUP, proposal -> {
+			events.add("attach " + proposal.tag);
+			if (proposal.tag.equals("second")) {
+				throw conversionFailure;
+			}
+			return proposal;
+		});
+
+		Throwable failure = catchThrowable(() -> {
+			offers.offerVariants(() -> proposals);
+			offers.strategies().getFirst().admit(null);
+		});
+
+		assertAll(() -> assertThat(failure).isSameAs(conversionFailure),
+				() -> assertThat(failure.getSuppressed()).containsExactly(cleanupFailure),
+				() -> assertThat(events).containsExactly("attach first", "attach second", "release first",
+						"release second", "release third"));
+	}
+
+	@Test
+	void variantMappingFailureReleasesMappedAndPendingProposals() {
+		List<String> events = new ArrayList<>();
+		IllegalStateException mappingFailure = new IllegalStateException("second mapping failed");
+		IllegalStateException cleanupFailure = new IllegalStateException("second release failed");
+		List<LmdbNativeStrategyProposal<String>> proposals = List.of(
+				new LmdbNativeStrategyProposal<>(() -> "first", LmdbNativeWork.UNKNOWN, "first",
+						() -> events.add("release first")),
+				new LmdbNativeStrategyProposal<>(() -> "second", LmdbNativeWork.UNKNOWN, "second", () -> {
+					events.add("release second");
+					throw cleanupFailure;
+				}),
+				new LmdbNativeStrategyProposal<>(() -> "third", LmdbNativeWork.UNKNOWN, "third",
+						() -> events.add("release third")));
+
+		Throwable failure = catchThrowable(() -> LmdbNativeCandidateOffers.mapVariants(proposals, proposal -> {
+			events.add("map " + proposal.tag);
+			if (proposal.tag.equals("second")) {
+				throw mappingFailure;
+			}
+			return proposal.map(String::length, proposal.tag);
+		}));
+
+		assertAll(() -> assertThat(failure).isSameAs(mappingFailure),
+				() -> assertThat(failure.getSuppressed()).containsExactly(cleanupFailure),
+				() -> assertThat(events).containsExactly("map first", "map second", "release first",
+						"release second", "release third"));
+	}
+
+	private static <T> LmdbNativeStrategy<Void, T> strategy(LmdbNativeCandidate<T> candidate) {
 		return LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ROW, candidate.id(),
 				context -> LmdbNativeAdmission.of(candidate));
 	}
@@ -294,5 +1134,40 @@ class LmdbNativeDispatchLoopEdgeCaseTest {
 			LmdbNativeCandidate.Opener<String> opener, Runnable release) {
 		return LmdbNativeCandidate.of(id, LmdbNativeCostQuote.streaming(
 				LmdbNativeCostVector.point(Feature.SCANNED_ROW, scannedRows), 1D), opener, release);
+	}
+
+	private static LmdbNativeCandidate<String> partialCandidate(String id, LmdbNativeCandidate.Opener<String> opener,
+			Runnable release) {
+		LmdbNativeCostVector work = LmdbNativeCostVector.bounds(Feature.GENERATED_ROW, 0D, 1D, 1D);
+		NativePhysicalWorkQuote partial = NativePhysicalWorkQuote.of(LmdbNativeCostVector.zero(), work, 1D,
+				NativePhysicalWorkEvidence.incomplete("unproved reducer work"));
+		LmdbNativeStrategyProposal<String> proposal = new LmdbNativeStrategyProposal<>(opener::open,
+				LmdbNativeWork.UNKNOWN, id, release);
+		proposal.withIncompletePhysicalWork(partial, "unproved reducer work");
+		return LmdbNativeStrategyProposal.candidate(proposal, LmdbNativeWork.UNKNOWN);
+	}
+
+	private static LmdbNativeCandidate.KernelSibling kernelSibling(LmdbNativeCandidate.KernelFamily family,
+			Object scope, Object recipe, int workers, LmdbNativeCandidate.KernelTier tier) {
+		return new LmdbNativeCandidate.KernelSibling(family, scope, recipe, workers, tier);
+	}
+
+	private static <T> LmdbNativeCandidate<T> kernelCandidate(String id, double scannedRows,
+			LmdbNativeCandidate.Opener<T> opener, Runnable release,
+			LmdbNativeCandidate.KernelSibling sibling) {
+		return LmdbNativeCandidate.of(id,
+				LmdbNativeCostQuote.streaming(LmdbNativeCostVector.point(Feature.SCANNED_ROW, scannedRows), 1D),
+				opener, release).withKernelSibling(sibling);
+	}
+
+	private static void restoreProperty(String key, String previous) {
+		if (previous == null) {
+			System.clearProperty(key);
+		} else {
+			System.setProperty(key, previous);
+		}
+	}
+
+	private record PeerCase(String name, LmdbNativeCandidate.KernelSibling sibling, String candidateId) {
 	}
 }

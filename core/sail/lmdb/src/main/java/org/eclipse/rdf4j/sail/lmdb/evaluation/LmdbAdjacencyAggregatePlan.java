@@ -47,6 +47,10 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	private final int groupSlot;
 	private final int groupField;
 	private final long groupConstant;
+	private final int[] groupSlots;
+	private final ResolvedValue[] groupKeys;
+	private final boolean predicateRootGroups;
+	private final long copyTargets;
 	private final CountChannel[] channels;
 	private final long predicate;
 	private final long subject;
@@ -55,12 +59,17 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	private final boolean namedContextsOnly;
 
 	private LmdbAdjacencyAggregatePlan(PatternPlan pattern, int groupSlot, int groupField, long groupConstant,
+			int[] groupSlots, ResolvedValue[] groupKeys, boolean predicateRootGroups, long copyTargets,
 			CountChannel[] channels, long predicate, long subject, long object, long[] acceptedContexts,
 			boolean namedContextsOnly) {
 		this.pattern = pattern;
 		this.groupSlot = groupSlot;
 		this.groupField = groupField;
 		this.groupConstant = groupConstant;
+		this.groupSlots = groupSlots.clone();
+		this.groupKeys = groupKeys.clone();
+		this.predicateRootGroups = predicateRootGroups;
+		this.copyTargets = copyTargets;
 		this.channels = channels;
 		this.predicate = predicate;
 		this.subject = subject;
@@ -78,7 +87,15 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			debug("input=" + arg.getClass().getSimpleName());
 			return null;
 		}
-		if (groupSlots.length > 1 || aggregates.length == 0
+		long copyTargets = 0L;
+		for (CopyBinding copy : input.copies) {
+			long target = 1L << copy.targetSlot;
+			if ((target & (input.pattern.producedMask | copyTargets)) != 0L) {
+				return null;
+			}
+			copyTargets |= target;
+		}
+		if (aggregates.length == 0
 				|| input.pattern.range != null && !input.pattern.p.isConstant()
 				|| input.pattern.hasRepeatedSlot()
 				|| !input.pattern.s.hasSlot() && !input.pattern.s.isConstant()
@@ -92,10 +109,51 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			return null;
 		}
 
-		ResolvedValue group = groupSlots.length == 0 ? ResolvedValue.star() : input.resolve(groupSlots[0]);
-		if (group == null || group.field == TripleIndex.CONTEXT_IDX || groupSlots.length > 0 && group.field == STAR) {
-			debug("group=" + group);
+		ResolvedValue[] groupKeys = new ResolvedValue[groupSlots.length];
+		int roleMask = 0;
+		long seenSlots = 0L;
+		for (int i = 0; i < groupSlots.length; i++) {
+			int slot = groupSlots[i];
+			if (slot < 0 || slot >= 64 || (seenSlots & 1L << slot) != 0L) {
+				return null;
+			}
+			seenSlots |= 1L << slot;
+			ResolvedValue key = input.resolve(slot);
+			if (key == null || key.field == TripleIndex.CONTEXT_IDX || key.field == STAR) {
+				debug("group=" + key);
+				return null;
+			}
+			groupKeys[i] = key;
+			if (key.field >= 0) {
+				roleMask |= 1 << key.field;
+			}
+		}
+		boolean predicateRootGroups = Integer.bitCount(roleMask) > 1;
+		int rootField = (roleMask & 1 << TripleIndex.SUBJ_IDX) != 0 ? TripleIndex.SUBJ_IDX : TripleIndex.OBJ_IDX;
+		if (predicateRootGroups && roleMask != ((1 << TripleIndex.PRED_IDX) | (1 << rootField))) {
 			return null;
+		}
+		int primarySlot = -1;
+		ResolvedValue group = groupSlots.length == 0 ? ResolvedValue.star() : groupKeys[0];
+		if (predicateRootGroups) {
+			for (int i = 0; i < groupKeys.length; i++) {
+				if (groupKeys[i].field == rootField) {
+					primarySlot = groupSlots[i];
+					group = groupKeys[i];
+					break;
+				}
+			}
+		} else if (groupSlots.length != 0) {
+			for (int i = 0; i < groupKeys.length; i++) {
+				if (groupKeys[i].field >= 0) {
+					group = groupKeys[i];
+					primarySlot = groupSlots[i];
+					break;
+				}
+			}
+			if (primarySlot < 0) {
+				primarySlot = groupSlots[0];
+			}
 		}
 		CountChannel[] channels = new CountChannel[aggregates.length];
 		for (int i = 0; i < aggregates.length; i++) {
@@ -137,8 +195,9 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 				acceptedContexts = new long[] { input.pattern.c.constant };
 			}
 		}
-		return new LmdbAdjacencyAggregatePlan(input.pattern, groupSlots.length == 0 ? -1 : groupSlots[0],
-				group.field, group.constant, channels, predicate, subject, object, acceptedContexts,
+		return new LmdbAdjacencyAggregatePlan(input.pattern, primarySlot, group.field, group.constant,
+				groupSlots, groupKeys, predicateRootGroups, copyTargets, channels, predicate, subject, object,
+				acceptedContexts,
 				input.pattern.namedContextScope);
 	}
 
@@ -149,13 +208,27 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	}
 
 	boolean handles(RowState row) {
+		if ((row.boundMask() & copyTargets) != 0L) {
+			return false;
+		}
+		for (long remaining = copyTargets; remaining != 0L; remaining &= remaining - 1L) {
+			if (row.summaryCell(Long.numberOfTrailingZeros(remaining)) != null) {
+				return false;
+			}
+		}
 		return enabled()
+				&& (!predicateRootGroups || subject == UNKNOWN && object == UNKNOWN && pattern.range == null
+						&& LmdbAdjacencyRootCounter.hasCanonicalBacking(row.source))
 				&& (subject != UNKNOWN ? pattern.s.lookup(row.slots) == subject
 						: pattern.s.lookup(row.slots) == UNKNOWN)
 				&& (object != UNKNOWN ? pattern.o.lookup(row.slots) == object
 						: pattern.o.lookup(row.slots) == UNKNOWN)
 				&& (pattern.c.isConstant() || pattern.c.lookup(row.slots) == UNKNOWN)
 				&& (predicate != UNKNOWN || pattern.p.lookup(row.slots) == UNKNOWN);
+	}
+
+	boolean hasExpandedGroups() {
+		return groupSlots.length > 1;
 	}
 
 	private static boolean enabled() {
@@ -179,6 +252,9 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			}
 			// This is a physical-operation bound, never a completed runtime or a statement-row estimate.
 			return LmdbNativeWork.between(low, high);
+		}
+		if (predicateRootGroups) {
+			return LmdbNativeWork.UNKNOWN;
 		}
 		if (predicate == UNKNOWN) {
 			try {
@@ -238,7 +314,8 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	@Override
 	public String properties() {
 		return "ADJACENCY_COUNT[fixedPredicate=" + (predicate != UNKNOWN) + ",groupField=" + groupField
-				+ ",rootHeap=" + (predicate == UNKNOWN) + ",channels="
+				+ ",groupKeys=" + Arrays.toString(groupKeys)
+				+ ",rootHeap=" + (predicate == UNKNOWN && !predicateRootGroups) + ",channels="
 				+ Arrays.toString(Arrays.stream(channels)
 						.map(channel -> channel.field + ":" + channel.distinct)
 						.toArray(String[]::new))
@@ -248,7 +325,13 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	@Override
 	public NativeAggregatePhysicalPlan.Work quote(RowState row) {
 		row.cancellation.check();
-		if (!handles(row) || subject != UNKNOWN || object != UNKNOWN || acceptedContexts != null
+		if (!handles(row)) {
+			return null;
+		}
+		if (predicateRootGroups) {
+			return predicateRootWork(row);
+		}
+		if (subject != UNKNOWN || object != UNKNOWN || acceptedContexts != null
 				|| namedContextsOnly || pattern.range != null) {
 			return null;
 		}
@@ -348,10 +431,43 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 		}
 	}
 
+	private NativeAggregatePhysicalPlan.Work predicateRootWork(RowState row) {
+		NativeLmdbQuerySource.PredicateProjectionStatistics facts = row.source.predicateProjectionStatistics(
+				groupField == TripleIndex.SUBJ_IDX, row.cancellation::check);
+		if (facts == null) {
+			return null;
+		}
+		double quads = facts.quads(), roots = facts.incidences(), predicates = facts.predicates();
+		boolean filterContexts = acceptedContexts != null || namedContextsOnly;
+		double scans = (filterContexts ? 2D : 1D) * quads + roots + predicates;
+		double contextChecks = filterContexts
+				? quads * Math.max(1D, acceptedContexts == null ? 0D : acceptedContexts.length)
+				: 0D;
+		LmdbNativeCostVector inputWork = LmdbNativeCostVector.builder()
+				.add(LmdbNativeCostVector.Feature.SCANNED_ROW, 0D, scans, scans)
+				.add(LmdbNativeCostVector.Feature.INDEX_SEEK, 0D, predicates + 1D, predicates + 1D)
+				.add(LmdbNativeCostVector.Feature.MEMBERSHIP_TEST, 0D, contextChecks + quads,
+						contextChecks + quads)
+				.build();
+		NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(roots, 0D, 0D, 0D, 0D,
+				0D, roots, inputWork);
+		LmdbNativeCostVector extra = LmdbNativeCostVector.builder()
+				.add(LmdbNativeCostVector.Feature.OPEN, 0D, predicates + 2D, predicates + 2D)
+				.add(LmdbNativeCostVector.Feature.OUTPUT_MATERIALIZATION, 0D, 0D,
+						roots == 0D ? 0D : Double.POSITIVE_INFINITY)
+				.build();
+		return new NativeAggregatePhysicalPlan.Work(input, extra, predicates);
+	}
+
+	@Override
+	public boolean blocksBeforeOutput() {
+		return groupSlots.length > 1;
+	}
+
 	@Override
 	public NativeAggregatePhysicalPlan.ColdAnchor coldAnchor(RowState row,
 			NativeAggregatePhysicalPlan.Work quotedWork) {
-		if (quotedWork == null) {
+		if (groupSlots.length > 1 || quotedWork == null) {
 			return null;
 		}
 		row.cancellation.check();
@@ -442,14 +558,81 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			return null;
 		}
 		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.inputStage("scan", row.cancellation)) {
-			List<BindingSet> result = predicate == UNKNOWN ? evaluateVariablePredicate(owner)
-					: evaluateFixedPredicate(owner, predicate);
+			List<BindingSet> result = predicateRootGroups ? groupedPredicateRoots(owner)
+					: predicate == UNKNOWN ? evaluateVariablePredicate(owner)
+							: evaluateFixedPredicate(owner, predicate);
 			if (result != null) {
 				scan.complete();
 			}
 			return result;
 		} catch (IOException e) {
 			throw new QueryEvaluationException(e);
+		}
+	}
+
+	private List<BindingSet> groupedPredicateRoots(NativeGroupIteration owner) throws IOException {
+		boolean outgoing = groupField == TripleIndex.SUBJ_IDX;
+		try (NativeReplayBindingList.Builder results = owner.collectResults()) {
+			try (NativeLmdbQuerySource.NativeProbe probe = owner.source.newProbe()) {
+				if (predicate != UNKNOWN) {
+					if (!appendPredicateRoot(owner, probe, predicate, outgoing, results)) {
+						return null;
+					}
+				} else {
+					try (PredicateCatalog catalog = PredicateCatalog.open(owner)) {
+						if (catalog == null) {
+							return null;
+						}
+						for (int i = 0; i < catalog.size; i++) {
+							owner.cancellation.check();
+							if (!appendPredicateRoot(owner, probe, catalog.predicates[i], outgoing, results)) {
+								return null;
+							}
+						}
+					}
+				}
+			}
+			return results.finish();
+		}
+	}
+
+	private boolean appendPredicateRoot(NativeGroupIteration owner, NativeLmdbQuerySource.NativeProbe probe,
+			long fixedPredicate, boolean outgoing, NativeReplayBindingList.Builder results) throws IOException {
+		var cancellation = LmdbNativeProbeDeadline.currentKernelCancellation(owner.cancellation);
+		try (KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory.forLedger(owner.resultLedger());
+				NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(fixedPredicate, outgoing)) {
+			if (adjacency == null || !adjacency.runsNeighborOrdered() || !adjacency.orderedKeyRunsWithBoundedOpen()) {
+				return false;
+			}
+			try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor cursor = adjacency.openKeyRunCursor()) {
+				if (cursor == null) {
+					return false;
+				}
+				memory.reserve(2L * (16L + Long.BYTES * SparseJoinAggregateKernel.BATCH_SIZE));
+				long[] neighbors = new long[SparseJoinAggregateKernel.BATCH_SIZE];
+				long[] weights = new long[SparseJoinAggregateKernel.BATCH_SIZE];
+				LmdbSparseJoinAggregatePlan.WeightedRuns rows = new LmdbSparseJoinAggregatePlan.WeightedRuns(cursor,
+						acceptedContexts, namedContextsOnly, cancellation, memory);
+				while (rows.nextRow()) {
+					long count = 0L, distinct = 0L, previous = 0L;
+					boolean hasPrevious = false;
+					for (int size; (size = rows.read(neighbors, weights)) != 0;) {
+						for (int i = 0; i < size; i++) {
+							count = FactorizedTail.addCounts(count, weights[i]);
+							if (!hasPrevious || neighbors[i] != previous) {
+								distinct = FactorizedTail.addCounts(distinct, 1L);
+								previous = neighbors[i];
+								hasPrevious = true;
+							}
+						}
+					}
+					if (count != 0L) {
+						results.add(binding(owner, rows.key(), fixedPredicate,
+								groupCounts(count, rows.key(), fixedPredicate, distinct)));
+					}
+				}
+				return true;
+			}
 		}
 	}
 
@@ -1014,10 +1197,19 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	}
 
 	private BindingSet binding(NativeGroupIteration owner, long groupId, Counts counts) {
-		QueryBindingSet result = new QueryBindingSet((groupSlot < 0 ? 0 : 1) + channels.length);
-		if (groupSlot >= 0 && groupId != UNKNOWN && groupId != NULL_CONTEXT_ID) {
-			result.addBinding(owner.slotNames[groupSlot],
-					owner.source.lazyValue(groupId, owner.layout.positionMask(groupSlot)));
+		return binding(owner, groupId, UNKNOWN, counts);
+	}
+
+	private BindingSet binding(NativeGroupIteration owner, long groupId, long fixedPredicate, Counts counts) {
+		QueryBindingSet result = new QueryBindingSet(groupSlots.length + channels.length);
+		for (int i = 0; i < groupSlots.length; i++) {
+			ResolvedValue key = groupKeys[i];
+			long id = key.field == CONSTANT ? key.constant
+					: predicateRootGroups && key.field == TripleIndex.PRED_IDX ? fixedPredicate : groupId;
+			if (id != UNKNOWN && id != NULL_CONTEXT_ID) {
+				result.addBinding(owner.slotNames[groupSlots[i]],
+						owner.source.lazyValue(id, owner.layout.positionMask(groupSlots[i])));
+			}
 		}
 		for (CountChannel channel : channels) {
 			long count = channel.distinct ? counts.distinct(channel.field) : counts.rows;
@@ -1063,56 +1255,55 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 	private static final class ResolvedInput {
 		final PatternPlan pattern;
 		final CopyBinding[] copies;
+		final ResolvedValue[] values;
 
-		private ResolvedInput(PatternPlan pattern, CopyBinding[] copies) {
+		private ResolvedInput(PatternPlan pattern, CopyBinding[] copies, ResolvedValue[] values) {
 			this.pattern = pattern;
 			this.copies = copies;
+			this.values = values;
 		}
 
 		static ResolvedInput tryCreate(SlotPlan arg) {
-			ArrayList<CopyBinding> copies = new ArrayList<>();
+			ArrayList<ExtensionPlan> extensions = new ArrayList<>();
 			SlotPlan current = arg;
 			while (current instanceof ExtensionPlan extension) {
-				for (CopyBinding copy : extension.copies) {
+				extensions.add(extension);
+				current = extension.arg;
+			}
+			if (!(current instanceof PatternPlan pattern)) {
+				return null;
+			}
+			ResolvedValue[] values = new ResolvedValue[Long.SIZE];
+			for (long remaining = pattern.producedMask; remaining != 0L; remaining &= remaining - 1L) {
+				int slot = Long.numberOfTrailingZeros(remaining);
+				values[slot] = new ResolvedValue(pattern.quadPositionOfSlot(slot), UNKNOWN);
+			}
+			ArrayList<CopyBinding> copies = new ArrayList<>();
+			// The child extension runs first; assignments inside each extension keep their array order.
+			for (int i = extensions.size() - 1; i >= 0; i--) {
+				for (CopyBinding copy : extensions.get(i).copies) {
 					if (copy.computed != null || copy.computedValue != null || copy.semanticValue != null
 							|| copy.termChecked) {
 						return null;
 					}
+					ResolvedValue value = copy.sourceSlot >= 0 ? values[copy.sourceSlot]
+							: copy.constant != UNKNOWN && copy.constant != NULL_CONTEXT_ID
+									? ResolvedValue.constant(copy.constant)
+									: null;
+					if (value == null) {
+						// An unbound or entry-dependent source needs ordinary assignment/error semantics.
+						return null;
+					}
+					// Capture the source now. A later assignment cannot retroactively change this alias.
+					values[copy.targetSlot] = value;
 					copies.add(copy);
 				}
-				current = extension.arg;
 			}
-			if (current instanceof PatternPlan pattern) {
-				return new ResolvedInput(pattern, copies.toArray(CopyBinding[]::new));
-			}
-			return null;
+			return new ResolvedInput(pattern, copies.toArray(CopyBinding[]::new), values);
 		}
 
 		ResolvedValue resolve(int slot) {
-			return resolve(slot, 0);
-		}
-
-		private ResolvedValue resolve(int slot, int depth) {
-			if (depth > copies.length) {
-				return null;
-			}
-			int field = pattern.quadPositionOfSlot(slot);
-			if (field >= 0) {
-				return new ResolvedValue(field, UNKNOWN);
-			}
-			for (CopyBinding copy : copies) {
-				if (copy.targetSlot != slot) {
-					continue;
-				}
-				if (copy.sourceSlot >= 0) {
-					return resolve(copy.sourceSlot, depth + 1);
-				}
-				if (copy.constant != UNKNOWN && copy.constant != NULL_CONTEXT_ID) {
-					return ResolvedValue.constant(copy.constant);
-				}
-				return null;
-			}
-			return null;
+			return values[slot];
 		}
 	}
 

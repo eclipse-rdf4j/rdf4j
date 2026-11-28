@@ -232,6 +232,14 @@ final class NativeReplayBindingList extends AbstractList<BindingSet> implements 
 		return reader;
 	}
 
+	/** A physical consumer can retain the original cells without rendering and reconstructing every BindingSet. */
+	synchronized NativeResultCursor physicalCursor() {
+		if (closed) {
+			throw new IllegalStateException("Aggregate replay is closed");
+		}
+		return replay.cursor();
+	}
+
 	@Override
 	public synchronized void close() {
 		if (closed) {

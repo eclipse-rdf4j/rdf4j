@@ -36,7 +36,17 @@ import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunCursor;
 import org.eclipse.rdf4j.sail.lmdb.LmdbPrefixRunPlan;
 import org.eclipse.rdf4j.sail.lmdb.TripleIndex;
 import org.eclipse.rdf4j.sail.lmdb.ValueIds;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeCostVector.Feature;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CachedDatatypeSummaryReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ColdDatatypeSummaryReceipt;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DatatypePageWorkspace;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.PredicateProjectionStatistics;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
@@ -134,9 +144,459 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	@Override
 	public Prepared prepare(RowState row) throws IOException {
 		LmdbNativeDatatypeHistogram bound = new LmdbNativeDatatypeHistogram(this, row.source);
+		CachedDatatypeSummaryReceipt cached = bound.cachedAdmission(row);
+		if (cached != null) {
+			return bound.new PreparedCachedSummary(row, cached);
+		}
+		ColdDatatypeSummaryReceipt cold = bound.coldAdmission(row);
+		if (cold != null) {
+			return bound.new PreparedColdSummary(row, cold);
+		}
+		PageReceipt pages = bound.pageAdmission(row);
+		if (pages != null) {
+			return bound.new PreparedPages(row, pages);
+		}
 		return NativeAggregateAlternative.unpriced(row, bound.estimateWork(row.source), originalExpr,
 				LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM,
 				(bindings, owner) -> bound.evaluate(bindings, owner, true));
+	}
+
+	private CachedDatatypeSummaryReceipt cachedAdmission(RowState row) {
+		if (!eligibleEvaluation(row)) {
+			return null;
+		}
+		checkControl(row.cancellation);
+		CachedDatatypeSummaryReceipt receipt = source.cachedDatatypeSummaryReceipt(false);
+		return receipt == null || receipt.bySubject() ? null : receipt;
+	}
+
+	private ColdDatatypeSummaryReceipt coldAdmission(RowState row) {
+		if (!eligibleEvaluation(row)) {
+			return null;
+		}
+		checkControl(row.cancellation);
+		ColdDatatypeSummaryReceipt receipt = source.coldDatatypeSummaryReceipt(false,
+				() -> checkControl(row.cancellation));
+		return receipt == null || receipt.bySubject() ? null : receipt;
+	}
+
+	private boolean eligibleEvaluation(RowState row) {
+		return row.source == source && row.base.isEmpty() && row.boundMask() == 0L && domainEligible()
+				&& LmdbNativeTermAuthority.canonicalPatternIds(source)
+				&& source instanceof SyntheticValueSource synthetic && synthetic.executionContext() != null
+				&& synthetic.executionContext().memoryScope() == row.memoryScope;
+	}
+
+	private record PageReceipt(DatatypePageWorkspace workspace, int predicates, long roots, long quads, long pages,
+			long countStoreBytes) {
+		long maximumVisits() {
+			return pages >= quads - roots ? quads : roots + pages;
+		}
+	}
+
+	/** Inspects bounded catalog metadata only; no page producer is opened while preparing the quote. */
+	private PageReceipt pageAdmission(RowState row) throws IOException {
+		if (!eligibleEvaluation(row)) {
+			return null;
+		}
+		checkControl(row.cancellation);
+		DatatypePageWorkspace workspace = source.datatypePageWorkspace(false);
+		if (workspace == null || workspace.bySubject()) {
+			return null;
+		}
+		PredicateProjectionStatistics statistics = source.predicateProjectionStatistics(false,
+				() -> checkControl(row.cancellation));
+		if (statistics == null || statistics.predicates() > Integer.MAX_VALUE) {
+			return null;
+		}
+		KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+				.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		NativeProbe probe = null;
+		WildcardAdjacency catalog = null;
+		PageReceipt result = null;
+		Throwable failure = null;
+		try {
+			if (memory.tryReserve(workspace.workspaceBytes())) {
+				checkControl(row.cancellation);
+				probe = source.newProbe();
+				catalog = probe.datatypePageSweep(workspace);
+				long pages = inspectPageCatalog(catalog, (int) statistics.predicates(), statistics.incidences(),
+						statistics.quads(), row.cancellation);
+				if (pages >= 0L) {
+					result = new PageReceipt(workspace, (int) statistics.predicates(),
+							statistics.incidences(), statistics.quads(), pages,
+							NativeCountGroupStore.configuredMaxBytes());
+				}
+			}
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		failure = KernelRuntime.closeResource(catalog, failure);
+		failure = KernelRuntime.closeResource(probe, failure);
+		failure = KernelRuntime.closeResource(memory, failure);
+		if (failure instanceof IOException io) {
+			throw io;
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+		return result;
+	}
+
+	/** Returns exact B only after the same catalog confirms P/R/Q and all page counts. */
+	private static long inspectPageCatalog(WildcardAdjacency catalog, int predicates, long roots, long quads,
+			NativeCancellationToken cancellation) {
+		if (catalog == null || catalog.predicateCount() != predicates) {
+			return -1L;
+		}
+		Runnable controlPoll = () -> checkControl(cancellation);
+		long totalRoots = 0L, totalQuads = 0L, totalPages = 0L, previous = 0L;
+		for (int index = 0; index < predicates; index++) {
+			pollControl(cancellation, index);
+			long predicate = catalog.predicateAt(index);
+			if (index != 0 && Long.compareUnsigned(previous, predicate) >= 0) {
+				return -1L;
+			}
+			previous = predicate;
+			catalog.bind(index);
+			long planeRoots = catalog.keyCount();
+			long planeQuads = catalog.quadCount();
+			// A certified page is nonempty, so an empty plane has no pages even when it has no page cursor.
+			long planePages = planeRoots == 0L && planeQuads == 0L ? 0L
+					: catalog.pageCount(controlPoll);
+			if (planeRoots < 0L || planeQuads < planeRoots || planePages < 0L || planePages > planeQuads
+					|| planeRoots > roots - totalRoots || planeQuads > quads - totalQuads
+					|| planePages > quads - totalPages || (planeRoots == 0L) != (planeQuads == 0L)
+					|| planeRoots == 0L && planePages != 0L) {
+				return -1L;
+			}
+			totalRoots += planeRoots;
+			totalQuads += planeQuads;
+			totalPages += planePages;
+		}
+		return totalRoots == roots && totalQuads == quads ? totalPages : -1L;
+	}
+
+	private final class PreparedPages implements Prepared {
+		private final RowState preparedRow;
+		private final long evaluationId;
+		private final PageReceipt receipt;
+		private final NativeAggregatePhysicalPlan.Work work;
+
+		PreparedPages(RowState row, PageReceipt receipt) {
+			preparedRow = row;
+			evaluationId = row.cancellation.evaluationId();
+			this.receipt = receipt;
+			work = pageWork(receipt);
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork() {
+			return LmdbNativeWork.UNKNOWN;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Retention retention() {
+			return resident(receipt.maximumVisits()) ? NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE
+					: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+			return row == preparedRow && row.source == source && row.cancellation.evaluationId() == evaluationId
+					&& row.base.isEmpty() && row.boundMask() == 0L ? work : null;
+		}
+
+		@Override
+		public boolean blocksBeforeOutput() {
+			return true;
+		}
+
+		@Override
+		public boolean retentionWorkIncluded() {
+			return true;
+		}
+
+		@Override
+		public String properties() {
+			return "DATATYPE_HISTOGRAM[producer=OSC_PAGE_SWEEP,storage=BOUNDED_COUNTS]";
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+			owner.check();
+			if (!bindings.isEmpty() || owner.evaluationId() != evaluationId || quote(preparedRow) == null
+					|| NativeCountGroupStore.configuredMaxBytes() != receipt.countStoreBytes()) {
+				return NativeAggregateAlternative.decline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM, "datatype page receipt changed");
+			}
+			return LmdbNativeDatatypeHistogram.this.evaluate(bindings, owner, true, null, receipt, null, preparedRow);
+		}
+	}
+
+	private static boolean samePageWorkspace(DatatypePageWorkspace expected, DatatypePageWorkspace current) {
+		return current != null && expected.viewAuthority() == current.viewAuthority()
+				&& expected.bySubject() == current.bySubject() && expected.explicit() == current.explicit()
+				&& current.workspaceBytes() <= expected.workspaceBytes();
+	}
+
+	/** P catalog entries, B page headers, and at most min(Q,R+B) page-local root visits. */
+	private static NativeAggregatePhysicalPlan.Work pageWork(PageReceipt receipt) {
+		long maximumVisits = receipt.maximumVisits();
+		double visits = maximumVisits;
+		double maxVisits = maximumVisits == 0L ? 0D : Math.nextUp((double) maximumVisits);
+		double predicates = receipt.predicates();
+		double pages = receipt.pages();
+		double maxPredicates = receipt.predicates() == 0 ? 0D : Math.nextUp(predicates);
+		double maxPages = receipt.pages() == 0L ? 0D : Math.nextUp((double) receipt.pages());
+		double levels = maximumVisits <= 1L ? 0D : Long.SIZE - Long.numberOfLeadingZeros(maximumVisits - 1L);
+		boolean nominalResident = NativeCountGroupStore.nominalUnaryGroupsFit(maximumVisits, receipt.countStoreBytes());
+		// Two shard-count passes and cursor directory progression each visit at most B nonempty shards;
+		// physical traversal additionally reads B page headers.
+		double scanned = 2D * predicates + 4D * pages + visits;
+		double maxScanned = upperAdd(upperAdd(upperMultiply(2D, maxPredicates), upperMultiply(4D, maxPages)),
+				maxVisits);
+		// A changed producer may expose one extra header before the receipt guard refuses it.
+		if (receipt.pages() != 0L) {
+			maxScanned = upperAdd(maxScanned, 1D);
+		}
+		// A nominally resident store reads its final markers directly. The spill envelope below already includes
+		// that final read, so it must not receive an additional marker pass.
+		if (nominalResident) {
+			scanned += visits;
+		}
+		maxScanned = upperAdd(maxScanned, maxVisits);
+		if (!resident(maximumVisits)) {
+			if (!nominalResident) {
+				scanned += 4D * visits * (1D + levels);
+			}
+			maxScanned = upperAdd(maxScanned,
+					upperMultiply(upperMultiply(4D, maxVisits), upperAdd(1D, levels)));
+		}
+		double sort = nominalResident ? 0D : 2D * visits * levels;
+		double maxSort = resident(maximumVisits) ? 0D
+				: upperMultiply(6D, upperMultiply(upperMultiply(upperMultiply(2D, maxVisits), levels),
+						upperAdd(2D, upperMultiply(2D, levels))));
+		LmdbNativeCostVector extra = LmdbNativeCostVector.builder()
+				.add(Feature.INDEX_SEEK, 0D, predicates, maxPredicates)
+				.add(Feature.SCANNED_ROW, 0D, scanned, maxScanned)
+				.add(Feature.DECODED_ROW, 0D, visits, maxVisits)
+				// Page validation and datatype/dictionary work may depend on encoded or RDF term width.
+				.add(Feature.INTERPRETED_ROW, 0D, pages + visits,
+						receipt.quads() == 0L ? 0D : Double.POSITIVE_INFINITY)
+				.add(Feature.SORT_N_LOG2_N, 0D, sort, maxSort)
+				.add(Feature.OUTPUT_MATERIALIZATION, 0D, visits, maxVisits)
+				.build();
+		NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(visits, 0D, 0D, 0D, 0D,
+				0D, maxVisits, LmdbNativeCostVector.zero());
+		return new NativeAggregatePhysicalPlan.Work(input, extra, maxVisits);
+	}
+
+	private final class PreparedCachedSummary implements Prepared {
+		private final RowState preparedRow;
+		private final long evaluationId;
+		private final CachedDatatypeSummaryReceipt receipt;
+		private final NativeAggregatePhysicalPlan.Work work;
+
+		PreparedCachedSummary(RowState row, CachedDatatypeSummaryReceipt receipt) {
+			preparedRow = row;
+			evaluationId = row.cancellation.evaluationId();
+			this.receipt = receipt;
+			work = cachedSummaryWork(receipt.groups());
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork() {
+			// Group count is not a work ceiling: datatype term resolution and hashing have variable width.
+			return LmdbNativeWork.UNKNOWN;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Retention retention() {
+			return resident(receipt.groups()) ? NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE
+					: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+			return row == preparedRow && row.source == source && row.cancellation.evaluationId() == evaluationId
+					&& row.base.isEmpty() && row.boundMask() == 0L ? work : null;
+		}
+
+		@Override
+		public boolean blocksBeforeOutput() {
+			return true;
+		}
+
+		@Override
+		public boolean retentionWorkIncluded() {
+			return true;
+		}
+
+		@Override
+		public String properties() {
+			return "DATATYPE_HISTOGRAM[producer=CACHED_DATATYPE_SUMMARY,storage=BOUNDED_COUNTS]";
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+			owner.check();
+			if (!bindings.isEmpty() || owner.evaluationId() != evaluationId || quote(preparedRow) == null) {
+				return NativeAggregateAlternative.decline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM, "cached datatype receipt changed");
+			}
+			return LmdbNativeDatatypeHistogram.this.evaluate(bindings, owner, true, receipt, null, null, preparedRow);
+		}
+	}
+
+	private final class PreparedColdSummary implements Prepared {
+		private final RowState preparedRow;
+		private final long evaluationId;
+		private final long countStoreBytes;
+		private final ColdDatatypeSummaryReceipt receipt;
+		private final NativeAggregatePhysicalPlan.Work work;
+
+		PreparedColdSummary(RowState row, ColdDatatypeSummaryReceipt receipt) {
+			preparedRow = row;
+			evaluationId = row.cancellation.evaluationId();
+			countStoreBytes = NativeCountGroupStore.configuredMaxBytes();
+			this.receipt = receipt;
+			work = coldSummaryWork(receipt);
+		}
+
+		@Override
+		public LmdbNativeWork estimateWork() {
+			return LmdbNativeWork.UNKNOWN;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Retention retention() {
+			return resident(receipt.roots()) ? NativeAggregatePhysicalPlan.Retention.RESIDENT_STATE
+					: NativeAggregatePhysicalPlan.Retention.RETAINED_GROUPS;
+		}
+
+		@Override
+		public NativeAggregatePhysicalPlan.Work quote(RowState row) {
+			return row == preparedRow && row.source == source && row.cancellation.evaluationId() == evaluationId
+					&& row.base.isEmpty() && row.boundMask() == 0L ? work : null;
+		}
+
+		@Override
+		public boolean blocksBeforeOutput() {
+			return true;
+		}
+
+		@Override
+		public boolean retentionWorkIncluded() {
+			return true;
+		}
+
+		@Override
+		public String properties() {
+			return "DATATYPE_HISTOGRAM[producer=COLD_DATATYPE_SUMMARY,storage=BOUNDED_COUNTS]";
+		}
+
+		@Override
+		public CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner) {
+			owner.check();
+			if (!bindings.isEmpty() || owner.evaluationId() != evaluationId || quote(preparedRow) == null
+					|| NativeCountGroupStore.configuredMaxBytes() != countStoreBytes) {
+				return NativeAggregateAlternative.decline(originalExpr,
+						LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM, "cold datatype receipt changed");
+			}
+			return LmdbNativeDatatypeHistogram.this.evaluate(bindings, owner, true, null, null, receipt, preparedRow);
+		}
+	}
+
+	/** Two root merges, a bounded dense synopsis traversal, and at most one datatype group per root. */
+	private static NativeAggregatePhysicalPlan.Work coldSummaryWork(ColdDatatypeSummaryReceipt receipt) {
+		// The common OPEN prices fixed setup; the current vector does not distinguish fixed allocation widths.
+		// The source receipt separately reserves the actual builder bytes before those allocations.
+		long rootCount = receipt.roots();
+		double roots = rootCount;
+		double pages = receipt.pages();
+		double predicates = receipt.predicates();
+		double maxRoots = rootCount == 0L ? 0D : Math.nextUp(roots);
+		double maxPages = receipt.pages() == 0L ? 0D : Math.nextUp(pages);
+		double maxPredicates = receipt.predicates() == 0 ? 0D : Math.nextUp(predicates);
+		double rootLevels = rootCount <= 1L ? 0D : Long.SIZE - Long.numberOfLeadingZeros(rootCount - 1L);
+		double planeLevels = receipt.predicates() <= 1 ? 0D
+				: Integer.SIZE - Integer.numberOfLeadingZeros(receipt.predicates() - 1);
+		// Metadata revalidation reads P planes and at most B shard directories. Each of two root passes reads P
+		// plane setups, at most 3B page/header events, and R root incidences; dense synopsis traversal is <=16R.
+		double scanned = 3D * predicates + 7D * pages + 18D * roots;
+		double maxScanned = upperAdd(upperAdd(upperMultiply(3D, maxPredicates), upperMultiply(7D, maxPages)),
+				upperMultiply(18D, maxRoots));
+		double heap = 2D * (2D * roots + predicates) * (1D + planeLevels);
+		double maxHeap = upperMultiply(2D,
+				upperMultiply(upperAdd(upperMultiply(2D, maxRoots), maxPredicates), upperAdd(1D, planeLevels)));
+		// In-place heap ordering performs linear heap construction and at most logarithmic sift per datatype ID.
+		double sort = 4D * roots * (1D + rootLevels);
+		double maxSort = upperMultiply(upperMultiply(4D, maxRoots), upperAdd(1D, rootLevels));
+		NativeAggregatePhysicalPlan.Work summary = cachedSummaryWork(rootCount);
+		LmdbNativeCostVector build = LmdbNativeCostVector.builder()
+				.add(Feature.INDEX_SEEK, 0D, 2D * predicates, upperMultiply(2D, maxPredicates))
+				.add(Feature.SCANNED_ROW, 0D, scanned, maxScanned)
+				.add(Feature.DECODED_ROW, 0D, 2D * roots, upperMultiply(2D, maxRoots))
+				.add(Feature.INTERPRETED_ROW, 0D, heap + roots, rootCount == 0L ? maxHeap : Double.POSITIVE_INFINITY)
+				.add(Feature.SORT_N_LOG2_N, 0D, sort, maxSort)
+				.build();
+		return new NativeAggregatePhysicalPlan.Work(summary.input(), summary.extra().plus(build),
+				summary.retainedRows());
+	}
+
+	private static boolean sameCachedReceipt(CachedDatatypeSummaryReceipt expected,
+			CachedDatatypeSummaryReceipt current) {
+		return current != null && expected.baseAuthority() == current.baseAuthority()
+				&& expected.bySubject() == current.bySubject() && expected.explicit() == current.explicit()
+				&& expected.groups() == current.groups() && current.workspaceBytes() <= expected.workspaceBytes();
+	}
+
+	private static boolean resident(long groups) {
+		return groups <= NativeCountGroupStore.INITIAL_ARENA_RECORDS;
+	}
+
+	/** The G physical summary entries can produce at most G datatype groups and unary count records. */
+	private static NativeAggregatePhysicalPlan.Work cachedSummaryWork(long groups) {
+		double entries = groups;
+		double maxEntries = groups == 0L ? 0D : Math.nextUp((double) groups);
+		double levels = groups <= 1L ? 0D : Long.SIZE - Long.numberOfLeadingZeros(groups - 1L);
+		double scanned = resident(groups) ? entries * 2D : entries + 4D * entries * (1D + levels);
+		double maxScanned = resident(groups) ? upperMultiply(2D, maxEntries)
+				: upperAdd(maxEntries, upperMultiply(upperMultiply(4D, maxEntries), upperAdd(1D, levels)));
+		double sort = resident(groups) ? 0D : 2D * entries * levels;
+		double maxSort = resident(groups) ? 0D
+				: upperMultiply(6D, upperMultiply(upperMultiply(upperMultiply(2D, maxEntries), levels),
+						upperAdd(2D, upperMultiply(2D, levels))));
+		LmdbNativeCostVector extra = LmdbNativeCostVector.builder()
+				.add(Feature.SCANNED_ROW, 0D, scanned, maxScanned)
+				.add(Feature.DECODED_ROW, 0D, entries, maxEntries)
+				// Resolution, canonicalization and hashing can depend on arbitrary datatype IRI width.
+				.add(Feature.INTERPRETED_ROW, 0D, entries, groups == 0L ? 0D : Double.POSITIVE_INFINITY)
+				.add(Feature.SORT_N_LOG2_N, 0D, sort, maxSort)
+				.add(Feature.OUTPUT_MATERIALIZATION, 0D, entries, maxEntries)
+				.build();
+		NativeAggregateCostQuotes.Input input = new NativeAggregateCostQuotes.Input(entries, 0D, 0D, 0D, 0D,
+				0D, maxEntries, LmdbNativeCostVector.zero());
+		return new NativeAggregatePhysicalPlan.Work(input, extra, maxEntries);
+	}
+
+	private static double upperAdd(double left, double right) {
+		return left == 0D ? right : right == 0D ? left : Math.nextUp(left + right);
+	}
+
+	private static double upperMultiply(double left, double right) {
+		return left == 0D || right == 0D ? 0D : Math.nextUp(left * right);
+	}
+
+	private static void checkControl(NativeCancellationToken cancellation) {
+		cancellation.check();
+		LmdbNativeProbeDeadline.poll(0);
+	}
+
+	private static void pollControl(NativeCancellationToken cancellation, int tick) {
+		cancellation.poll(tick);
+		LmdbNativeProbeDeadline.poll(tick);
 	}
 
 	@Override
@@ -156,8 +616,14 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	}
 
 	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner, boolean exact) {
+		return evaluate(bindings, owner, exact, null, null, null, null);
+	}
+
+	private CloseableIteration<BindingSet> evaluate(BindingSet bindings, NativeCancellationToken owner, boolean exact,
+			CachedDatatypeSummaryReceipt receipt, PageReceipt pageReceipt, ColdDatatypeSummaryReceipt coldReceipt,
+			RowState preparedRow) {
 		NativeCancellationToken cancellation = new NativeCancellationToken(owner);
-		cancellation.check();
+		checkControl(cancellation);
 		if (!bindings.isEmpty()) {
 			return exact ? NativeAggregateAlternative.decline(originalExpr,
 					LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM, "native datatype input is correlated")
@@ -166,7 +632,8 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 		try (NativeExecutionPhaseEvent.Span scan = NativeExecutionPhaseEvent.startNested("scan", cancellation);
 				NativeExecutionPhaseEvent.Span expressions = NativeExecutionPhaseEvent.startNested("expressions",
 						cancellation)) {
-			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation, exact);
+			CloseableIteration<BindingSet> result = evaluateUnmeasured(bindings, cancellation, exact, receipt,
+					pageReceipt, coldReceipt, preparedRow);
 			expressions.complete();
 			scan.complete();
 			return result;
@@ -174,27 +641,32 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	}
 
 	private CloseableIteration<BindingSet> evaluateUnmeasured(BindingSet bindings,
-			NativeCancellationToken cancellation, boolean exact) {
+			NativeCancellationToken cancellation, boolean exact, CachedDatatypeSummaryReceipt receipt,
+			PageReceipt pageReceipt, ColdDatatypeSummaryReceipt coldReceipt, RowState preparedRow) {
 		LmdbAdjacencyOptimizationTelemetry telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.PLANE);
-		NativeStructuralCounts histogram = tryDomainHistogram(telemetry, cancellation);
-		if (histogram == null) {
+		NativeStructuralCounts histogram = receipt != null
+				? tryCachedSummary(telemetry, cancellation, receipt, preparedRow)
+				: pageReceipt != null ? tryPreparedPages(telemetry, cancellation, pageReceipt, preparedRow)
+						: coldReceipt != null ? tryColdSummary(telemetry, cancellation, coldReceipt, preparedRow)
+								: tryDomainHistogram(telemetry, cancellation);
+		if (receipt == null && pageReceipt == null && coldReceipt == null && histogram == null) {
 			telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.ROOT);
 			histogram = tryParallelHistogram(telemetry, cancellation);
 		}
-		if (histogram == null) {
+		if (receipt == null && pageReceipt == null && coldReceipt == null && histogram == null) {
 			telemetry = telemetry(LmdbAdjacencyOptimizationTelemetry.Grain.ROOT);
 			histogram = sequentialHistogram(telemetry, cancellation);
 		}
 		if (histogram == null) {
-			cancellation.check();
+			checkControl(cancellation);
 			return exact ? NativeAggregateAlternative.decline(originalExpr,
 					LmdbNativeAttemptMetrics.PATH_DATATYPE_HISTOGRAM, "native datatype histogram sources unavailable")
 					: NativeExecutionContextCarrier.forEvaluation(genericStep().evaluate(bindings), source);
 		}
 		try {
-			cancellation.check();
+			checkControl(cancellation);
 			NativeResultCursor rows = histogram.results(keyName, countName);
-			cancellation.check();
+			checkControl(cancellation);
 			RUNS.incrementAndGet();
 			if (telemetry != null) {
 				telemetry.publish(originalExpr);
@@ -205,6 +677,218 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(histogram, failure));
 			throw new AssertionError("unreachable");
 		}
+	}
+
+	/** This opener consumes only the retained summary described by the frozen source receipt. */
+	private NativeStructuralCounts tryCachedSummary(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation, CachedDatatypeSummaryReceipt receipt, RowState row) {
+		checkControl(cancellation);
+		NativeStructuralCounts acquired = null;
+		NativeProbe probe = null;
+		Throwable failure = null;
+		KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+				.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		try {
+			if (memory.tryReserve(receipt.workspaceBytes())) {
+				checkControl(cancellation);
+				if (sameCachedReceipt(receipt, source.cachedDatatypeSummaryReceipt(false))) {
+					probe = source.newProbe();
+					NativeLmdbQuerySource.DatatypeSummary summary = probe.cachedDatatypeSummary(receipt);
+					checkControl(cancellation);
+					if (summary != null) {
+						if (telemetry != null) {
+							telemetry.trackPayloadDecodes();
+						}
+						acquired = collectSummary(summary, telemetry, cancellation);
+					}
+				}
+			}
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		failure = KernelRuntime.closeResource(probe, failure);
+		failure = KernelRuntime.closeResource(memory, failure);
+		if (failure != null) {
+			failure = KernelRuntime.closeResource(acquired, failure);
+			if (failure instanceof IOException) {
+				throw new QueryEvaluationException(failure);
+			}
+			NativeContextClosingIteration.throwFailure(failure);
+			throw new AssertionError("unreachable");
+		}
+		return acquired;
+	}
+
+	/** Reserves the cold builder before a probe and consumes only the frozen same-view summary recipe. */
+	private NativeStructuralCounts tryColdSummary(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation, ColdDatatypeSummaryReceipt receipt, RowState row) {
+		checkControl(cancellation);
+		NativeStructuralCounts acquired = null;
+		NativeProbe probe = null;
+		Throwable failure = null;
+		KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+				.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		try {
+			Runnable controlPoll = () -> checkControl(cancellation);
+			controlPoll.run();
+			if (memory.tryReserve(receipt.workspaceBytes())) {
+				controlPoll.run();
+				probe = source.newProbe();
+				NativeLmdbQuerySource.DatatypeSummary summary = probe.coldDatatypeSummary(receipt, controlPoll,
+						uniform -> {
+							controlPoll.run();
+							BULK_LITERAL_HEADER_BATCHES.incrementAndGet();
+							if (telemetry != null) {
+								telemetry.literalHeaderBatch();
+							}
+							if (uniform) {
+								UNIFORM_LITERAL_DATATYPE_BATCHES.incrementAndGet();
+							}
+						});
+				controlPoll.run();
+				if (summary != null) {
+					if (telemetry != null) {
+						telemetry.trackPayloadDecodes();
+					}
+					acquired = collectSummary(summary, telemetry, cancellation);
+				}
+			}
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		failure = KernelRuntime.closeResource(probe, failure);
+		failure = KernelRuntime.closeResource(memory, failure);
+		if (failure != null) {
+			failure = KernelRuntime.closeResource(acquired, failure);
+			if (failure instanceof IOException) {
+				throw new QueryEvaluationException(failure);
+			}
+			NativeContextClosingIteration.throwFailure(failure);
+			throw new AssertionError("unreachable");
+		}
+		return acquired;
+	}
+
+	/** Executes only the frozen page recipe, retaining the catalog used to validate its physical bounds. */
+	private NativeStructuralCounts tryPreparedPages(LmdbAdjacencyOptimizationTelemetry telemetry,
+			NativeCancellationToken cancellation, PageReceipt receipt, RowState row) {
+		checkControl(cancellation);
+		NativeStructuralCounts histogram = null;
+		NativeProbe probe = null;
+		WildcardAdjacency catalog = null;
+		KernelRuntime.AggregateMemory memory = KernelRuntime.AggregateMemory
+				.forLedger(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()));
+		Throwable failure = null;
+		boolean completed = false;
+		try {
+			boolean matchingWorkspace = memory.tryReserve(receipt.workspace().workspaceBytes());
+			if (matchingWorkspace) {
+				checkControl(cancellation);
+				matchingWorkspace = samePageWorkspace(receipt.workspace(), source.datatypePageWorkspace(false));
+				checkControl(cancellation);
+			}
+			if (matchingWorkspace) {
+				probe = source.newProbe();
+				catalog = probe.datatypePageSweep(receipt.workspace());
+				if (inspectPageCatalog(catalog, receipt.predicates(), receipt.roots(), receipt.quads(),
+						cancellation) == receipt.pages()) {
+					if (telemetry != null) {
+						telemetry.trackPayloadDecodes();
+					}
+					histogram = new NativeStructuralCounts(source, cancellation, 1, false);
+					DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
+					LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(histogram);
+					Runnable controlPoll = () -> checkControl(cancellation);
+					long pagesSeen = 0L, quadsSeen = 0L, rootsSeen = 0L;
+					boolean valid = true;
+					for (int index = 0; index < receipt.predicates() && valid; index++) {
+						checkControl(cancellation);
+						catalog.bind(index);
+						if (catalog.keyCount() == 0L) {
+							continue;
+						}
+						if (telemetry != null) {
+							telemetry.planeVisited();
+						}
+						AdjacencyPageCursor pages = null;
+						Throwable pageFailure = null;
+						try {
+							pages = catalog.openPageCursor(controlPoll);
+							if (pages == null) {
+								valid = false;
+							} else {
+								if (telemetry != null) {
+									telemetry.trackPageHeaderFastPaths();
+								}
+								while (true) {
+									checkControl(cancellation);
+									if (!pages.advance()) {
+										break;
+									}
+									int pageRoots = pages.rowCount();
+									long pageQuads = pages.quadCount();
+									if (pagesSeen >= receipt.pages() || pageRoots <= 0 || pageQuads < pageRoots
+											|| pageQuads > receipt.quads() - quadsSeen
+											|| pageRoots > receipt.maximumVisits() - rootsSeen) {
+										valid = false;
+										break;
+									}
+									pagesSeen++;
+									quadsSeen += pageQuads;
+									rootsSeen += pageRoots;
+									boolean uniformRootKind = pages.uniformRowTermKind();
+									boolean uniformRootDatatype = pages.uniformRowLiteralDatatype();
+									if (telemetry != null) {
+										telemetry.pageVisited();
+										telemetry.rootKindHeader(uniformRootKind);
+										telemetry.rootDatatypeHeader(uniformRootDatatype);
+										telemetry.rootsVisited(pageRoots);
+									}
+									collectPage(resolver, literalHeaders, histogram, pages, uniformRootKind,
+											uniformRootDatatype, telemetry);
+									ADJACENCY_PAGES.incrementAndGet();
+								}
+							}
+						} catch (Throwable operationFailure) {
+							pageFailure = operationFailure;
+						}
+						pageFailure = KernelRuntime.closeResource(pages, pageFailure);
+						if (pageFailure != null) {
+							NativeContextClosingIteration.throwFailure(pageFailure);
+						}
+					}
+					if (valid && pagesSeen == receipt.pages() && quadsSeen == receipt.quads()) {
+						literalHeaders.flush(resolver, histogram);
+						checkControl(cancellation);
+						ADJACENCY_PLANE_ROOTS.addAndGet(rootsSeen);
+						ADJACENCY_DOMAIN_RUNS.incrementAndGet();
+						if (telemetry != null) {
+							telemetry.source("OSC_PAGE_SWEEP");
+						}
+						completed = true;
+					}
+				}
+			}
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		if (!completed) {
+			failure = KernelRuntime.closeResource(histogram, failure);
+		}
+		failure = KernelRuntime.closeResource(catalog, failure);
+		failure = KernelRuntime.closeResource(probe, failure);
+		failure = KernelRuntime.closeResource(memory, failure);
+		if (failure != null) {
+			if (completed) {
+				failure = KernelRuntime.closeResource(histogram, failure);
+			}
+			if (failure instanceof IOException) {
+				throw new QueryEvaluationException(failure);
+			}
+			NativeContextClosingIteration.throwFailure(failure);
+			throw new AssertionError("unreachable");
+		}
+		return completed ? histogram : null;
 	}
 
 	private LmdbAdjacencyOptimizationTelemetry telemetry(LmdbAdjacencyOptimizationTelemetry.Grain grain) {
@@ -221,57 +905,39 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	}
 
 	/** Metadata-only incoming root scan shared with q9 and SOC/OSC domain intersection. */
+	private boolean domainEligible() {
+		return valueField == TripleIndex.OBJ_IDX && subj == LmdbNativeAggregateCompiler.UNKNOWN
+				&& pred == LmdbNativeAggregateCompiler.UNKNOWN && obj == LmdbNativeAggregateCompiler.UNKNOWN
+				&& !plan.hasKeyRange() && plan.acceptedContexts() == null && !plan.namedContextsOnly();
+	}
+
 	private NativeStructuralCounts tryDomainHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
 			NativeCancellationToken cancellation) {
-		cancellation.check();
-		if (valueField != org.eclipse.rdf4j.sail.lmdb.TripleIndex.OBJ_IDX
-				|| subj != LmdbNativeAggregateCompiler.UNKNOWN
-				|| pred != LmdbNativeAggregateCompiler.UNKNOWN
-				|| obj != LmdbNativeAggregateCompiler.UNKNOWN || plan.hasKeyRange()
-				|| plan.acceptedContexts() != null || plan.namedContextsOnly()) {
+		checkControl(cancellation);
+		if (!domainEligible()) {
 			return null;
 		}
 		if (telemetry != null) {
 			telemetry.trackPayloadDecodes();
 		}
 		NativeStructuralCounts acquired = null;
+		NativeProbe probe = null;
+		Throwable failure = null;
 		try {
-			try (NativeLmdbQuerySource.NativeProbe probe = source
-					.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
-				NativeLmdbQuerySource.DatatypeSummary summary = probe.nodeDomainDatatypeSummary(false, uniform -> {
-					cancellation.check();
-					BULK_LITERAL_HEADER_BATCHES.incrementAndGet();
-					if (telemetry != null) {
-						telemetry.literalHeaderBatch();
-					}
-					if (uniform) {
-						UNIFORM_LITERAL_DATATYPE_BATCHES.incrementAndGet();
-					}
-				});
-				if (summary != null) {
-					NativeStructuralCounts histogram = new NativeStructuralCounts(source, cancellation, 1, false);
-					acquired = histogram;
-					DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
-					NativeLmdbQuerySource.DatatypeSummary.GroupCursor groups = summary.cursor();
-					while (groups.next()) {
-						cancellation.check();
-						if (telemetry != null) {
-							telemetry.rootMetadataRead();
-						}
-						IRI datatype = groups.referenced()
-								? resolver.referencedDatatype(groups.representativeId(), groups.datatypeId())
-								: resolver.datatypeOf(groups.representativeId());
-						if (datatype != null) {
-							addMultiplicity(histogram, datatype, groups.quadMultiplicity());
-						}
-					}
-					ADJACENCY_DATATYPE_SUMMARY_RUNS.incrementAndGet();
-					ADJACENCY_DOMAIN_RUNS.incrementAndGet();
-					if (telemetry != null) {
-						telemetry.source("DATATYPE_SUMMARY");
-					}
-					return histogram;
+			probe = source.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation));
+			NativeLmdbQuerySource.DatatypeSummary summary = probe.nodeDomainDatatypeSummary(false, uniform -> {
+				checkControl(cancellation);
+				BULK_LITERAL_HEADER_BATCHES.incrementAndGet();
+				if (telemetry != null) {
+					telemetry.literalHeaderBatch();
 				}
+				if (uniform) {
+					UNIFORM_LITERAL_DATATYPE_BATCHES.incrementAndGet();
+				}
+			});
+			if (summary != null) {
+				acquired = collectSummary(summary, telemetry, cancellation);
+			} else {
 				NativeLmdbQuerySource.NodeDomainSynopsis synopsis = probe.nodeDomainSynopsis(false);
 				if (synopsis != null) {
 					NativeStructuralCounts histogram = new NativeStructuralCounts(source, cancellation, 1, false);
@@ -279,8 +945,12 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 					DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
 					LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(histogram);
 					NativeLmdbQuerySource.NodeDomainSynopsis.RootCursor roots = synopsis.cursor();
-					while (roots.next()) {
-						cancellation.check();
+					while (true) {
+						checkControl(cancellation);
+						if (!roots.next()) {
+							break;
+						}
+						checkControl(cancellation);
 						if (telemetry != null) {
 							telemetry.rootIdDecoded();
 							telemetry.rootMetadataRead();
@@ -289,18 +959,66 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 						collectRoot(resolver, literalHeaders, histogram, roots.rootId(), roots.quadMultiplicity());
 					}
 					literalHeaders.flush(resolver, histogram);
+					checkControl(cancellation);
 					ADJACENCY_DOMAIN_RUNS.incrementAndGet();
 					if (telemetry != null) {
 						telemetry.source("NODE_DOMAIN_SYNOPSIS");
 					}
-					return histogram;
 				}
 			}
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		failure = KernelRuntime.closeResource(probe, failure);
+		if (failure != null) {
+			failure = KernelRuntime.closeResource(acquired, failure);
+			if (failure instanceof IOException) {
+				throw new QueryEvaluationException(failure);
+			}
+			NativeContextClosingIteration.throwFailure(failure);
+			throw new AssertionError("unreachable");
+		}
+		if (acquired != null) {
+			return acquired;
+		}
+		try {
 			return tryAdjacencyPlaneHistogram(telemetry, cancellation);
 		} catch (IOException e) {
-			throw new QueryEvaluationException(KernelRuntime.closeResource(acquired, e));
+			throw new QueryEvaluationException(e);
+		}
+	}
+
+	private NativeStructuralCounts collectSummary(NativeLmdbQuerySource.DatatypeSummary summary,
+			LmdbAdjacencyOptimizationTelemetry telemetry, NativeCancellationToken cancellation) {
+		NativeStructuralCounts histogram = new NativeStructuralCounts(source, cancellation, 1, false);
+		try {
+			DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
+			NativeLmdbQuerySource.DatatypeSummary.GroupCursor groups = summary.cursor();
+			while (true) {
+				checkControl(cancellation);
+				if (!groups.next()) {
+					break;
+				}
+				checkControl(cancellation);
+				if (telemetry != null) {
+					telemetry.rootMetadataRead();
+				}
+				IRI datatype = groups.referenced()
+						? resolver.referencedDatatype(groups.representativeId(), groups.datatypeId())
+						: resolver.datatypeOf(groups.representativeId());
+				if (datatype != null) {
+					addMultiplicity(histogram, datatype, groups.quadMultiplicity());
+				}
+			}
+			checkControl(cancellation);
+			ADJACENCY_DATATYPE_SUMMARY_RUNS.incrementAndGet();
+			ADJACENCY_DOMAIN_RUNS.incrementAndGet();
+			if (telemetry != null) {
+				telemetry.source("DATATYPE_SUMMARY");
+			}
+			return histogram;
 		} catch (RuntimeException | Error failure) {
-			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(acquired, failure));
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(histogram, failure));
 			throw new AssertionError("unreachable");
 		}
 	}
@@ -308,43 +1026,50 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	private NativeStructuralCounts tryAdjacencyPlaneHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
 			NativeCancellationToken cancellation)
 			throws IOException {
-		cancellation.check();
+		checkControl(cancellation);
 		NativeStructuralCounts histogram = null;
-		try (NativeStructuralCounts.RootWorkspace workspace = NativeStructuralCounts.rootWorkspace(source,
-				cancellation)) {
-			if (workspace == null) {
-				return null;
-			}
-			long[] predicates = LmdbAdjacencyRootDomainCursor.predicateCatalog(source, cancellation);
-			if (predicates == null) {
-				return null;
-			}
-			histogram = new NativeStructuralCounts(source, cancellation, 1, false);
-			try (NativeLmdbQuerySource.NativeProbe probe = source
-					.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
+		NativeStructuralCounts.RootWorkspace workspace = null;
+		NativeProbe probe = null;
+		Throwable failure = null;
+		boolean completed = false;
+		try {
+			workspace = NativeStructuralCounts.rootWorkspace(source, cancellation);
+			long[] predicates = workspace == null ? null
+					: LmdbAdjacencyRootDomainCursor.predicateCatalog(source, cancellation);
+			if (predicates != null) {
+				histogram = new NativeStructuralCounts(source, cancellation, 1, false);
+				probe = source.newProbe(NativeLmdbQuerySource.captureCursorCancellation(cancellation));
 				histogram.reserveWorkspace(64L + (long) predicates.length * Long.BYTES);
 				DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
 				LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(histogram);
 				long rootsVisited = 0L;
+				boolean valid = true;
 				for (long predicate : predicates) {
-					cancellation.check();
+					checkControl(cancellation);
 					if (telemetry != null) {
 						telemetry.planeVisited();
 					}
-					try (NativeLmdbQuerySource.NativeAdjacency adjacency = probe.adjacency(predicate, false)) {
+					NativeAdjacency adjacency = null;
+					AdjacencyPageCursor pages = null;
+					KeyRunCursor roots = null;
+					Throwable planeFailure = null;
+					try {
+						adjacency = probe.adjacency(predicate, false);
 						if (adjacency == null || !adjacency.supportsKeyEnumeration()
 								|| !adjacency.keysImplyNonEmptyRuns()) {
-							histogram.close();
-							return null;
-						}
-						try (NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor pages = adjacency
-								.openPageCursor()) {
+							valid = false;
+						} else {
+							pages = adjacency.openPageCursor();
 							if (pages != null) {
 								if (telemetry != null) {
 									telemetry.trackPageHeaderFastPaths();
 								}
-								while (pages.advance()) {
-									cancellation.check();
+								while (true) {
+									checkControl(cancellation);
+									if (!pages.advance()) {
+										break;
+									}
+									checkControl(cancellation);
 									boolean uniformRootKind = pages.uniformRowTermKind();
 									boolean uniformRootDatatype = pages.uniformRowLiteralDatatype();
 									if (telemetry != null) {
@@ -358,49 +1083,80 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 									rootsVisited = Math.addExact(rootsVisited, pages.rowCount());
 									ADJACENCY_PAGES.incrementAndGet();
 								}
-								continue;
-							}
-						}
-						try (NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor roots = adjacency.openKeyRunCursor()) {
-							if (roots == null) {
-								histogram.close();
-								return null;
-							}
-							while (roots.advance()) {
-								cancellation.check();
-								long multiplicity = roots.runSize();
-								if (multiplicity > 0L) {
-									if (telemetry != null) {
-										telemetry.rootIdDecoded();
-										telemetry.rootMetadataRead();
-										telemetry.rootsVisited(1L);
+							} else {
+								roots = adjacency.openKeyRunCursor();
+								if (roots == null) {
+									valid = false;
+								} else {
+									while (true) {
+										checkControl(cancellation);
+										if (!roots.advance()) {
+											break;
+										}
+										checkControl(cancellation);
+										long multiplicity = roots.runSize();
+										if (multiplicity > 0L) {
+											if (telemetry != null) {
+												telemetry.rootIdDecoded();
+												telemetry.rootMetadataRead();
+												telemetry.rootsVisited(1L);
+											}
+											collectRoot(resolver, literalHeaders, histogram, roots.key(), multiplicity);
+											rootsVisited++;
+										}
 									}
-									collectRoot(resolver, literalHeaders, histogram, roots.key(), multiplicity);
-									rootsVisited++;
 								}
 							}
 						}
+					} catch (Throwable operationFailure) {
+						planeFailure = operationFailure;
+					}
+					planeFailure = KernelRuntime.closeResource(roots, planeFailure);
+					planeFailure = KernelRuntime.closeResource(pages, planeFailure);
+					planeFailure = KernelRuntime.closeResource(adjacency, planeFailure);
+					if (planeFailure instanceof IOException io) {
+						throw io;
+					}
+					if (planeFailure != null) {
+						NativeContextClosingIteration.throwFailure(planeFailure);
+					}
+					if (!valid) {
+						break;
 					}
 				}
-				literalHeaders.flush(resolver, histogram);
-				ADJACENCY_PLANE_ROOTS.addAndGet(rootsVisited);
-				ADJACENCY_DOMAIN_RUNS.incrementAndGet();
-				if (telemetry != null) {
-					telemetry.source("OSC_PAGE_SWEEP");
+				if (valid) {
+					literalHeaders.flush(resolver, histogram);
+					checkControl(cancellation);
+					ADJACENCY_PLANE_ROOTS.addAndGet(rootsVisited);
+					ADJACENCY_DOMAIN_RUNS.incrementAndGet();
+					if (telemetry != null) {
+						telemetry.source("OSC_PAGE_SWEEP");
+					}
+					completed = true;
 				}
-				return histogram;
 			}
-		} catch (IOException | RuntimeException | Error failure) {
-			KernelRuntime.closeResource(histogram, failure);
-			throw failure;
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
 		}
+		failure = KernelRuntime.closeResource(probe, failure);
+		failure = KernelRuntime.closeResource(workspace, failure);
+		if (!completed || failure != null) {
+			failure = KernelRuntime.closeResource(histogram, failure);
+		}
+		if (failure instanceof IOException io) {
+			throw io;
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
+		}
+		return completed ? histogram : null;
 	}
 
 	private void collectPage(DatatypeResolver resolver, LiteralHeaderBatch literalHeaders,
 			NativeStructuralCounts histogram,
-			NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor page, boolean uniformRootKind,
+			AdjacencyPageCursor page, boolean uniformRootKind,
 			boolean uniformRootDatatype, LmdbAdjacencyOptimizationTelemetry telemetry) {
-		resolver.cancellation.check();
+		checkControl(resolver.cancellation);
 		if (uniformRootKind) {
 			long representative = page.firstRow();
 			if (telemetry != null) {
@@ -410,6 +1166,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 				if (telemetry != null) {
 					telemetry.headerRejectedPage();
 				}
+				checkControl(resolver.cancellation);
 				return;
 			}
 			if (uniformRootDatatype) {
@@ -421,6 +1178,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 					telemetry.rootMetadataRead();
 					telemetry.headerBulkCountPage();
 				}
+				checkControl(resolver.cancellation);
 				PAGE_LITERAL_DATATYPE_FAST_PATHS.incrementAndGet();
 				return;
 			}
@@ -429,7 +1187,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 			long representative = 0L;
 			long literalMultiplicity = 0L;
 			for (int row = 0; row < page.rowCount(); row++) {
-				resolver.cancellation.poll(row);
+				pollControl(resolver.cancellation, row);
 				long valueId = page.rowAt(row);
 				PAGE_ROOT_IDS_DECODED.incrementAndGet();
 				if (telemetry != null) {
@@ -453,12 +1211,14 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 				if (telemetry != null) {
 					telemetry.headerBulkCountPage();
 				}
+				checkControl(resolver.cancellation);
 				PAGE_LITERAL_DATATYPE_FAST_PATHS.incrementAndGet();
 			}
+			checkControl(resolver.cancellation);
 			return;
 		}
 		for (int row = 0; row < page.rowCount(); row++) {
-			resolver.cancellation.poll(row);
+			pollControl(resolver.cancellation, row);
 			long valueId = page.rowAt(row);
 			PAGE_ROOT_IDS_DECODED.incrementAndGet();
 			if (telemetry != null) {
@@ -467,11 +1227,12 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 			}
 			collectRoot(resolver, literalHeaders, histogram, valueId, page.rowQuadCount(row));
 		}
+		checkControl(resolver.cancellation);
 	}
 
 	private void collectRoot(DatatypeResolver resolver, LiteralHeaderBatch literalHeaders,
 			NativeStructuralCounts histogram, long valueId, long multiplicity) {
-		resolver.cancellation.check();
+		checkControl(resolver.cancellation);
 		if (ValueIds.getIdType(valueId) == ValueIds.T_LITERAL) {
 			literalHeaders.add(valueId, multiplicity, resolver, histogram);
 			return;
@@ -485,8 +1246,9 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 	private void collectReferencedLiterals(DatatypeResolver resolver, NativeStructuralCounts histogram,
 			long[] literalIds,
 			long[] multiplicities, long[] datatypeIds, int length) {
-		resolver.cancellation.check();
+		checkControl(resolver.cancellation);
 		int populated = resolver.resolverSource.literalDatatypeIds(literalIds, 0, length, datatypeIds, 0);
+		checkControl(resolver.cancellation);
 		if (populated != length) {
 			throw new QueryEvaluationException(
 					"bulk literal datatype lookup populated " + populated + " of " + length + " lanes");
@@ -498,29 +1260,31 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 		long uniformDatatype = datatypeIds[0];
 		boolean uniform = uniformDatatype >= 0L;
 		for (int i = 1; uniform && i < length; i++) {
-			resolver.cancellation.poll(i);
+			pollControl(resolver.cancellation, i);
 			uniform = datatypeIds[i] == uniformDatatype;
 		}
 		if (uniform) {
 			long totalMultiplicity = 0L;
 			for (int i = 0; i < length; i++) {
-				resolver.cancellation.poll(i);
+				pollControl(resolver.cancellation, i);
 				totalMultiplicity = Math.addExact(totalMultiplicity, multiplicities[i]);
 			}
 			IRI datatype = resolver.referencedDatatype(literalIds[0], uniformDatatype);
 			if (datatype != null) {
 				addMultiplicity(histogram, datatype, totalMultiplicity);
 			}
+			checkControl(resolver.cancellation);
 			UNIFORM_LITERAL_DATATYPE_BATCHES.incrementAndGet();
 			return;
 		}
 		for (int i = 0; i < length; i++) {
-			resolver.cancellation.poll(i);
+			pollControl(resolver.cancellation, i);
 			IRI datatype = resolver.referencedDatatype(literalIds[i], datatypeIds[i]);
 			if (datatype != null) {
 				addMultiplicity(histogram, datatype, multiplicities[i]);
 			}
 		}
+		checkControl(resolver.cancellation);
 	}
 
 	private static void addMultiplicity(NativeStructuralCounts histogram, IRI datatype, long multiplicity) {
@@ -551,7 +1315,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 
 		/** The datatype IRI of the literal id, or null when the id is not a literal. */
 		IRI datatypeOf(long id) {
-			cancellation.check();
+			checkControl(cancellation);
 			if (id == 0L || id == NativeLmdbQuerySource.UNKNOWN_ID) {
 				return null;
 			}
@@ -580,52 +1344,67 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 				inlinedRepresentatives[representativeIndex] = id;
 			}
 			Value value = dictionary.value(inlinedRepresentatives[representativeIndex], positionMask);
+			checkControl(cancellation);
 			return value instanceof Literal literal ? literal.getDatatype() : null;
 		}
 
 		private IRI referencedDatatype(long literalId, long datatypeId) {
-			cancellation.check();
+			checkControl(cancellation);
 			if (datatypeId < 0L) {
 				// Header peek unsupported by this source: full materialization fallback.
 				Value value = resolverSource.lazyValue(literalId, positionMask);
+				checkControl(cancellation);
 				return value instanceof Literal ? ((Literal) value).getDatatype() : null;
 			}
 			if (datatypeId == 0L) {
 				return XSD.STRING;
 			}
 			Value value = dictionary.value(datatypeId);
+			checkControl(cancellation);
 			return value instanceof IRI iri ? iri : null;
 		}
 	}
 
 	private NativeStructuralCounts sequentialHistogram(LmdbAdjacencyOptimizationTelemetry telemetry,
 			NativeCancellationToken cancellation) {
-		cancellation.check();
+		checkControl(cancellation);
 		if (telemetry != null) {
 			telemetry.trackPayloadDecodes();
 		}
 		NativeStructuralCounts histogram = null;
-		try (LmdbPrefixRunCursor cursor = source.prefixRuns(plan, subj, pred, obj,
-				LmdbNativeAggregateCompiler.UNKNOWN, true, null,
-				NativeLmdbQuerySource.captureCursorCancellation(cancellation))) {
-			if (cursor == null) {
-				return null;
+		LmdbPrefixRunCursor cursor = null;
+		Throwable failure = null;
+		boolean completed = false;
+		try {
+			cursor = source.prefixRuns(plan, subj, pred, obj, LmdbNativeAggregateCompiler.UNKNOWN, true, null,
+					NativeLmdbQuerySource.captureCursorCancellation(cancellation));
+			if (cursor != null) {
+				histogram = new NativeStructuralCounts(source, cancellation, 1, false);
+				DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
+				LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(histogram);
+				collect(cursor, resolver, literalHeaders, histogram);
+				literalHeaders.flush(resolver, histogram);
+				checkControl(cancellation);
+				if (telemetry != null) {
+					telemetry.source("PREFIX_RUNS_SEQUENTIAL");
+				}
+				completed = true;
 			}
-			histogram = new NativeStructuralCounts(source, cancellation, 1, false);
-			DatatypeResolver resolver = new DatatypeResolver(source, telemetry, cancellation, histogram);
-			LiteralHeaderBatch literalHeaders = new LiteralHeaderBatch(histogram);
-			collect(cursor, resolver, literalHeaders, histogram);
-			literalHeaders.flush(resolver, histogram);
-			if (telemetry != null) {
-				telemetry.source("PREFIX_RUNS_SEQUENTIAL");
-			}
-			return histogram;
-		} catch (IOException e) {
-			throw new QueryEvaluationException(KernelRuntime.closeResource(histogram, e));
-		} catch (RuntimeException | Error failure) {
-			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(histogram, failure));
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		failure = KernelRuntime.closeResource(cursor, failure);
+		if (!completed || failure != null) {
+			failure = KernelRuntime.closeResource(histogram, failure);
+		}
+		if (failure instanceof IOException) {
+			throw new QueryEvaluationException(failure);
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 			throw new AssertionError("unreachable");
 		}
+		return completed ? histogram : null;
 	}
 
 	private void collect(LmdbPrefixRunCursor cursor, DatatypeResolver resolver, LiteralHeaderBatch literalHeaders,
@@ -649,7 +1428,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 				addMultiplicity(histogram, datatype, multiplicity);
 			}
 		}
-		resolver.cancellation.check();
+		checkControl(resolver.cancellation);
 	}
 
 	/** Parallel partitioned run counting with run-aligned boundaries, or null to fall back to sequential. */
@@ -780,19 +1559,30 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 			LiteralHeaderBatch literalHeaders, long[] lo, long[] hi, NativeStructuralCounts histogram,
 			CursorCancellation cursorCancellation)
 			throws IOException {
-		resolver.cancellation.check();
-		try (LmdbPrefixRunCursor cursor = workerSource.prefixRuns(plan, subj, pred, obj,
-				LmdbNativeAggregateCompiler.UNKNOWN, true, null, cursorCancellation)) {
+		checkControl(resolver.cancellation);
+		LmdbPrefixRunCursor cursor = null;
+		Throwable failure = null;
+		try {
+			cursor = workerSource.prefixRuns(plan, subj, pred, obj, LmdbNativeAggregateCompiler.UNKNOWN, true, null,
+					cursorCancellation);
 			if (cursor == null) {
 				throw new QueryEvaluationException("parallel datatype histogram worker could not open its cursor");
 			}
-			if (lo != null && !cursor.seekTo(lo)) {
-				return;
+			if (lo == null || cursor.seekTo(lo)) {
+				if (hi != null) {
+					cursor.stopBefore(hi);
+				}
+				collect(cursor, resolver, literalHeaders, histogram);
 			}
-			if (hi != null) {
-				cursor.stopBefore(hi);
-			}
-			collect(cursor, resolver, literalHeaders, histogram);
+		} catch (Throwable operationFailure) {
+			failure = operationFailure;
+		}
+		failure = KernelRuntime.closeResource(cursor, failure);
+		if (failure instanceof IOException io) {
+			throw io;
+		}
+		if (failure != null) {
+			NativeContextClosingIteration.throwFailure(failure);
 		}
 	}
 
@@ -810,6 +1600,7 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 		}
 
 		void add(long id, long multiplicity, DatatypeResolver resolver, NativeStructuralCounts histogram) {
+			checkControl(resolver.cancellation);
 			ids[size] = id;
 			multiplicities[size] = multiplicity;
 			size++;
@@ -819,11 +1610,12 @@ final class LmdbNativeDatatypeHistogram implements NativeAggregateAlternative {
 		}
 
 		void flush(DatatypeResolver resolver, NativeStructuralCounts histogram) {
-			resolver.cancellation.check();
+			checkControl(resolver.cancellation);
 			if (size == 0) {
 				return;
 			}
 			collectReferencedLiterals(resolver, histogram, ids, multiplicities, datatypeIds, size);
+			checkControl(resolver.cancellation);
 			size = 0;
 		}
 	}

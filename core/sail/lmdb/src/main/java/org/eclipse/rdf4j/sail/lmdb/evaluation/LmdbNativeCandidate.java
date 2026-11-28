@@ -21,16 +21,50 @@ import java.util.Set;
  * and the opener that binds it. Opening may still return null, which is a bind-time decline; the dispatch loop then
  * drops the candidate and re-selects among the rest.
  *
- * @param id         the strategy tag, as explanations, forcing and metrics know it
- * @param quote      the candidate's cost and benefit quote
- * @param opener     binds the candidate; null means it cannot bind for this row
- * @param release    frees resources reserved while proposing when the candidate is not opened
- * @param lastResort true for a candidate that is considered only when nothing else opened
- * @param dominates  ids of strategies this candidate structurally dominates at this decision point: whenever both are
- *                   admitted, the dominated one is eliminated regardless of price
+ * @param id                  the strategy tag, as explanations, forcing and metrics know it
+ * @param quote               the candidate's cost and benefit quote
+ * @param opener              binds the candidate; null means it cannot bind for this row
+ * @param release             frees resources reserved while proposing when the candidate is not opened
+ * @param lastResort          true for a candidate that is considered only when nothing else opened
+ * @param dominates           ids of strategies this candidate structurally dominates at this decision point: whenever
+ *                            both are admitted, the dominated one is eliminated regardless of price
+ * @param missingPhysicalWork why an explicitly incomplete physical quote cannot serve as a whole-plan price, or null
+ *                            when no physical work proof is missing
+ * @param kernelSibling       the admitted execution recipe and tier, when it has a compiled/interpreted peer
  */
 record LmdbNativeCandidate<T>(String id, LmdbNativeCostQuote quote, Opener<T> opener, Runnable release,
-		boolean lastResort, Set<String> dominates) {
+		boolean lastResort, Set<String> dominates, String missingPhysicalWork, KernelSibling kernelSibling) {
+
+	enum KernelFamily {
+		ROW,
+		DISTINCT_ROW,
+		ORDERED_ROW,
+		AGGREGATE
+	}
+
+	enum KernelTier {
+		COMPILED,
+		INTERPRETED
+	}
+
+	/** The scope is compared by identity: peers must belong to the same admitted input or terminal owner. */
+	record KernelSibling(KernelFamily family, Object scope, Object recipe, int workers, KernelTier tier) {
+		KernelSibling {
+			Objects.requireNonNull(family);
+			Objects.requireNonNull(scope);
+			Objects.requireNonNull(recipe);
+			Objects.requireNonNull(tier);
+			if (workers < 1) {
+				throw new IllegalArgumentException("A kernel recipe needs at least one worker");
+			}
+		}
+
+		boolean isInterpretedSiblingOf(KernelSibling compiled) {
+			return compiled != null && tier == KernelTier.INTERPRETED && compiled.tier == KernelTier.COMPILED
+					&& family == compiled.family && scope == compiled.scope && recipe.equals(compiled.recipe)
+					&& workers == compiled.workers;
+		}
+	}
 
 	@FunctionalInterface
 	interface Opener<T> {
@@ -47,23 +81,36 @@ record LmdbNativeCandidate<T>(String id, LmdbNativeCostQuote quote, Opener<T> op
 	}
 
 	static <T> LmdbNativeCandidate<T> of(String id, LmdbNativeCostQuote quote, Opener<T> opener) {
-		return new LmdbNativeCandidate<>(id, quote, opener, null, false, Set.of());
+		return new LmdbNativeCandidate<>(id, quote, opener, null, false, Set.of(), null, null);
 	}
 
 	static <T> LmdbNativeCandidate<T> of(String id, LmdbNativeCostQuote quote, Opener<T> opener, Runnable release) {
-		return new LmdbNativeCandidate<>(id, quote, opener, release, false, Set.of());
+		return new LmdbNativeCandidate<>(id, quote, opener, release, false, Set.of(), null, null);
+	}
+
+	LmdbNativeCandidate<T> withMissingPhysicalWork(String reason) {
+		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, dominates,
+				Objects.requireNonNull(reason), kernelSibling);
 	}
 
 	LmdbNativeCandidate<T> withInputSpread(LmdbNativeRowSpread spread) {
-		return new LmdbNativeCandidate<>(id, quote.withInputSpread(spread), opener, release, lastResort, dominates);
+		return new LmdbNativeCandidate<>(id, quote.withInputSpread(spread), opener, release, lastResort, dominates,
+				missingPhysicalWork, kernelSibling);
 	}
 
 	LmdbNativeCandidate<T> asLastResort() {
-		return new LmdbNativeCandidate<>(id, quote, opener, release, true, dominates);
+		return new LmdbNativeCandidate<>(id, quote, opener, release, true, dominates, missingPhysicalWork,
+				kernelSibling);
 	}
 
 	LmdbNativeCandidate<T> dominating(Set<String> ids) {
-		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, ids);
+		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, ids, missingPhysicalWork,
+				kernelSibling);
+	}
+
+	LmdbNativeCandidate<T> withKernelSibling(KernelSibling sibling) {
+		return new LmdbNativeCandidate<>(id, quote, opener, release, lastResort, dominates, missingPhysicalWork,
+				sibling);
 	}
 
 	/** The id without a parenthesised variant suffix, which is what a forced strategy name refers to. */

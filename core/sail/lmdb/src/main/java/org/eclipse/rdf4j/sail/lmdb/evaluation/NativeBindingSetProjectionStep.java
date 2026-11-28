@@ -120,7 +120,15 @@ final class NativeBindingSetProjectionStep implements NativeResultStep, LmdbNati
 
 	@Override
 	public NativeResultCursor evaluateNative(BindingSet bindings) {
-		NativeResultCursor delegate = NativeResultSteps.open(arg, bindings);
+		return project(NativeResultSteps.open(arg, bindings), bindings);
+	}
+
+	@Override
+	public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+		return project(NativeResultSteps.openRelation(arg, bindings), bindings);
+	}
+
+	private NativeResultCursor project(NativeResultCursor delegate, BindingSet bindings) {
 		Map<String, Integer> indices = new LinkedHashMap<>();
 		if (includeAllParentBindings) {
 			bindings.getBindingNames().forEach(name -> indices.put(name, indices.size()));

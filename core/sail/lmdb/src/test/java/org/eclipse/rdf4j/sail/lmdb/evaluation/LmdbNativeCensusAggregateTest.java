@@ -16,21 +16,38 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.eclipse.rdf4j.sail.lmdb.evaluation.NativeCancellationTestAccess.mockScanSource;
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.mockito.AdditionalAnswers.delegatesTo;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.io.File;
+import java.math.BigInteger;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -38,10 +55,12 @@ import java.util.stream.Stream;
 import org.eclipse.rdf4j.common.transaction.IsolationLevels;
 import org.eclipse.rdf4j.model.IRI;
 import org.eclipse.rdf4j.model.Literal;
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.ValueFactory;
 import org.eclipse.rdf4j.model.vocabulary.RDF4J;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.Dataset;
+import org.eclipse.rdf4j.query.QueryInterruptedException;
 import org.eclipse.rdf4j.query.QueryLanguage;
 import org.eclipse.rdf4j.query.QueryResults;
 import org.eclipse.rdf4j.query.algebra.Filter;
@@ -59,6 +78,7 @@ import org.eclipse.rdf4j.query.parser.QueryParserUtil;
 import org.eclipse.rdf4j.repository.sail.SailRepository;
 import org.eclipse.rdf4j.repository.sail.SailRepositoryConnection;
 import org.eclipse.rdf4j.repository.sail.SailTupleQuery;
+import org.eclipse.rdf4j.sail.base.SailDataset;
 import org.eclipse.rdf4j.sail.base.SailDatasetTripleTermSource;
 import org.eclipse.rdf4j.sail.lmdb.AdjacencyEngagementTestAccess;
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
@@ -68,10 +88,14 @@ import org.eclipse.rdf4j.sail.lmdb.NativeQuerySourceAccess;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyCoverage;
 import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.config.LmdbStoreConfig;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeAdjacency.AdjacencyPageCursor;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NativeProbe;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.NodePredicates;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.WildcardAdjacency;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -167,7 +191,13 @@ class LmdbNativeCensusAggregateTest {
 	@Test
 	void globalCensusUsesExactStructuralReductionInEveryMode() {
 		System.setProperty(NATIVE, "false");
-		List<BindingSet> expected = rows(CENSUS);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(CENSUS);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
 		assertThat(expected).hasSize(1);
 		Map<String, Long> values = new HashMap<>();
 		expected.get(0).forEach(binding -> values.put(binding.getName(), ((Literal) binding.getValue()).longValue()));
@@ -185,6 +215,2040 @@ class LmdbNativeCensusAggregateTest {
 			assertThat(telemetry).as(mode).contains("nativeExecutionPath=adjacencyCensus");
 			assertThat(telemetry).as(mode).doesNotContain("ENCOUNTER_ORDER_REQUIRES_LMDB");
 		}
+	}
+
+	@Test
+	void mixedNamedGraphPageWithEmptyDefaultHasCompleteSameGroupCensusQuote() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		PhysicalGrain grain = assertMixedPageEvidence(0L);
+
+		UnforcedGroupRun run = evaluateUnforcedGroup(CENSUS);
+		assertThat(run.expected()).as("native-disabled evaluation returns the complete aggregate row").hasSize(1);
+		assertThat(run.expected().getFirst()).as("the exact full RDF result includes all ten aggregate bindings")
+				.hasSize(10);
+		assertThat(run.expected().getFirst().getBindingNames()).containsExactlyInAnyOrder("quads", "namedGraphs",
+				"subjects", "predicates", "objects", "iriObjectQuads", "literalObjectQuads", "blankObjectQuads",
+				"otherObjectQuads", "blankSubjectQuads");
+
+		LmdbNativeDecisionRecord decision = run.decision();
+		LmdbNativeDecisionRecord.Entry census = censusEntry(decision);
+		assertThat(census.admitted()).as(decision.describe("GROUP")).isTrue();
+		assertThat(census.priceable())
+				.as("mixed-page census has a complete independent producer/reducer quote: %s",
+						decision.describe("GROUP"))
+				.isTrue();
+		assertThat(census.missingPhysicalWork()).as(decision.describe("GROUP")).isNull();
+		assertThat(census.features()).as("the complete same-GROUP census quote retains its feature vector")
+				.isNotNull();
+		LmdbNativeCostVector quote = census.features();
+		assertThat(grain.contributions())
+				.as("mixed quads create more physical contributions than page headers: %s", grain)
+				.isGreaterThan(grain.headers());
+		assertAll("mixed-page reducer/storage work uses C contributions while retaining B page headers separately",
+				() -> assertThat(quote.expected(LmdbNativeCostVector.Feature.GROUP_UPDATE))
+						.as("GROUP_UPDATE uses physical contribution count C=%s, separately from B=%s",
+								grain.contributions(),
+								grain.headers())
+						.isEqualTo(10D * grain.contributions()),
+				() -> assertThat(quote.expected(LmdbNativeCostVector.Feature.DISTINCT_UPDATE))
+						.as("all four DISTINCT channels plus reducer membership use C, not B")
+						.isEqualTo(6D * grain.contributions()),
+				() -> assertThat(quote.expected(LmdbNativeCostVector.Feature.MEMBERSHIP_TEST))
+						.as("two nonmetadata RDF-term DISTINCT channels use C, not B")
+						.isEqualTo(2D * grain.contributions()),
+				() -> assertThat(quote.high(LmdbNativeCostVector.Feature.SORT_N_LOG2_N))
+						.as("typed event storage has the outward C-based record and merge bound")
+						.isGreaterThanOrEqualTo(typedSortHigh(grain.contributions())));
+	}
+
+	@Test
+	void mixedNamedGraphCensusQuotesContextPrefixReadWork() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		PhysicalGrain grain = assertMixedPageEvidence(0L);
+		assertThat(grain.contextPrefixReads()).as("mixed pages require real preceding context-count prefix reads")
+				.isPositive();
+		assertThat(grain.mixedPagesWithPrefix()).as("the encoder places these prefix reads on mixed pages")
+				.isPositive();
+		assertThat(grain.contextPrefixValidationReads())
+				.as("the selected opener revalidates one bounded final-row prefix header per affected page")
+				.isPositive();
+
+		UnforcedGroupRun run = evaluateUnforcedGroup(CENSUS);
+		LmdbNativeDecisionRecord.Entry census = censusEntry(run.decision());
+		assertThat(census.priceable()).as("the mixed-page census remains completely quoted: %s",
+				run.decision().describe("GROUP")).isTrue();
+		long expectedScanned = 9L;
+		expectedScanned = Math.addExact(expectedScanned, Math.multiplyExact(11L, grain.predicates()));
+		expectedScanned = Math.addExact(expectedScanned, Math.multiplyExact(2L, grain.nonemptyPredicates()));
+		expectedScanned = Math.addExact(expectedScanned, Math.multiplyExact(7L, grain.shardDescriptors()));
+		expectedScanned = Math.addExact(expectedScanned, Math.multiplyExact(4L, grain.headers()));
+		expectedScanned = Math.addExact(expectedScanned, grain.contributions());
+		expectedScanned = Math.addExact(expectedScanned, grain.contextPrefixReads());
+		expectedScanned = Math.addExact(expectedScanned, grain.contextPrefixValidationReads());
+		assertThat(census.features().expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+				.as("SCANNED_ROW includes source-derived mixed context-prefix reads apart from B, C and T")
+				.isEqualTo((double) expectedScanned);
+	}
+
+	@Test
+	void receiptMetadataWorkDoesNotTreatRootAndQuadFactsAsVisitedRows() throws Exception {
+		populateHeaderOnlyCensusFixture(1, 4);
+		HeaderOnlyGrain oneRoot = assertHeaderOnlyPageEvidence(1L, 4L, 2L, 2L);
+		UnforcedGroupRun oneRootRun = evaluateUnforcedGroup(CENSUS);
+		LmdbNativeDecisionRecord.Entry oneRootCensus = censusEntry(oneRootRun.decision());
+		assertThat(oneRootCensus.priceable()).as("one-root source has a complete same-GROUP quote: %s",
+				oneRootRun.decision().describe("GROUP")).isTrue();
+		assertHeaderOnlyQuote(oneRootCensus, oneRoot);
+
+		populateHeaderOnlyCensusFixture(2, 2);
+		HeaderOnlyGrain twoRoots = assertHeaderOnlyPageEvidence(2L, 4L, 2L, 2L);
+		UnforcedGroupRun twoRootsRun = evaluateUnforcedGroup(CENSUS);
+		LmdbNativeDecisionRecord.Entry twoRootsCensus = censusEntry(twoRootsRun.decision());
+		assertThat(twoRootsCensus.priceable()).as("two-root source has a complete same-GROUP quote: %s",
+				twoRootsRun.decision().describe("GROUP")).isTrue();
+		assertHeaderOnlyQuote(twoRootsCensus, twoRoots);
+
+		assertAll("header-only work depends on equal physical work, not the logical root fact",
+				() -> assertThat(oneRoot.predicates()).isEqualTo(twoRoots.predicates()),
+				() -> assertThat(oneRoot.pages()).as("both fixtures retain B=2").isEqualTo(twoRoots.pages()),
+				() -> assertThat(oneRoot.contributions()).as("both fixtures retain header grain C=2")
+						.isEqualTo(twoRoots.contributions()),
+				() -> assertThat(oneRoot.shardTransitionsUpperBound())
+						.as("both fixtures retain the same source-owned transition upper bound")
+						.isEqualTo(twoRoots.shardTransitionsUpperBound()),
+				() -> assertThat(oneRoot.nonemptyPredicates()).as("both fixtures retain exact selected-plane N")
+						.isEqualTo(twoRoots.nonemptyPredicates()),
+				() -> assertThat(oneRoot.predicateSegments()).as("both fixtures retain exact catalog segment count G")
+						.isEqualTo(twoRoots.predicateSegments()),
+				() -> assertThat(oneRoot.shardDescriptors()).as("both fixtures retain exact directory size S")
+						.isEqualTo(twoRoots.shardDescriptors()),
+				() -> assertThat(oneRoot.quads()).isEqualTo(twoRoots.quads()),
+				() -> assertThat(oneRoot.logicalRoots()).isLessThan(twoRoots.logicalRoots()),
+				() -> assertThat(oneRoot.pageRootVisits()).isGreaterThan(oneRoot.logicalRoots()),
+				() -> assertThat(twoRoots.pageRootVisits()).isEqualTo(twoRoots.logicalRoots()),
+				() -> assertThat(oneRootCensus.features().expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("the same physical work has equal quote despite different logical R")
+						.isEqualTo(twoRootsCensus.features().expected(LmdbNativeCostVector.Feature.SCANNED_ROW)));
+	}
+
+	private static void assertHeaderOnlyQuote(LmdbNativeDecisionRecord.Entry census, HeaderOnlyGrain grain) {
+		assertAll("aggregate cost components retain the homogeneous page header work",
+				() -> assertThat(census.features().expected(LmdbNativeCostVector.Feature.DECODED_ROW))
+						.as("five SUM channels add one aggregate-value decode per header contribution")
+						.isEqualTo(5D * grain.contributions()),
+				() -> assertThat(census.features().expected(LmdbNativeCostVector.Feature.INTERPRETED_ROW))
+						.as("one event plus five finite SUM/IF scalar channels are priced per contribution")
+						.isEqualTo(grain.contributions()
+								+ 5D * (grain.contributions() + Math.min(grain.contributions(), 216D))));
+	}
+
+	private static double typedSortHigh(long contributions) {
+		double maxEvents = Math.nextUp((double) contributions);
+		double records = Math.nextUp(1D + Math.nextUp(maxEvents * 17D));
+		double levels = Math.getExponent(records) + 1D;
+		double mergeWidth = Math.nextUp(2D + Math.nextUp(2D * levels));
+		return Math.nextUp(Math.nextUp(Math.nextUp(records * levels) * mergeWidth) * 15D);
+	}
+
+	@Test
+	void nonzeroDefaultContextDoesNotCertifyGraphWildcardCensusCoverage() throws Exception {
+		populateMixedNamedGraphFixture(true);
+		assertMixedPageEvidence(1L);
+		UnforcedGroupRun run = evaluateUnforcedGroup(CENSUS);
+		assertCensusRemainsUnpriced(run.decision());
+	}
+
+	@Test
+	void restrictedGraphOnMixedPagesRemainsUnpriced() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		assertMixedPageEvidence(0L);
+		String query = CENSUS.replace("COUNT(DISTINCT ?g)", "COUNT(*)")
+				.replace("GRAPH ?g", "GRAPH <" + EX + "mixed-page-graph-one>");
+		UnforcedGroupRun run = evaluateUnforcedGroup(query);
+		assertCensusRemainsUnpriced(run.decision());
+	}
+
+	@Test
+	void namedGraphDatasetSubsetDoesNotCertifyGlobalCensusCoverage() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		assertMixedPageEvidence(0L);
+		String query = CENSUS.replace("WHERE { GRAPH ?g",
+				"FROM NAMED <" + EX + "mixed-page-graph-one> WHERE { GRAPH ?g");
+		UnforcedGroupRun run = evaluateUnforcedGroup(query);
+		assertThat(run.expected()).as("the restricted named graph dataset has one full aggregate row").hasSize(1);
+		assertThat(((Literal) run.expected().getFirst().getValue("quads")).longValue())
+				.as("the graph subset contributes only its own statements")
+				.isEqualTo(3_072L);
+		assertThat(((Literal) run.expected().getFirst().getValue("namedGraphs")).longValue())
+				.as("the GRAPH variable ranges only over the selected dataset graph")
+				.isEqualTo(1L);
+		assertCensusRemainsUnpriced(run.decision());
+	}
+
+	@Test
+	void noncanonicalSourceStaysUnpricedAndUsesExactFallback() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, CENSUS, null).getTupleExpr();
+		Group group = group(root);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
+			SyntheticValueSource scopedActual = SyntheticValueSource.forEvaluation(actual);
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
+			Group physicalGroup = group(physical.expression());
+			QueryEvaluationStep canonical = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedActual, strategy, context,
+							physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(canonical).as("the normalized real source reaches the census capability").isNotNull();
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+			layout.freeze(List.of("s", "p", "o", "g"));
+			RowState canonicalRow = new RowState(scopedActual, layout, EmptyBindingSet.getInstance());
+			NativeAggregateAlternative.Prepared canonicalPrepared = ((NativeAggregateAlternative) canonical)
+					.prepare(canonicalRow);
+			assertThat(canonicalPrepared).isNotNull();
+			assertThat(canonicalPrepared.quote(canonicalRow))
+					.as("canonical source receives the complete certified page-reducer recipe")
+					.isNotNull();
+			scopedActual.executionContext().close();
+
+			NativeLmdbQuerySource unproved = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			when(unproved.hasCanonicalIds()).thenReturn(false);
+			doReturn(null).when(unproved)
+					.censusPageSweepReceipt(anyBoolean(), anyBoolean(), anyBoolean(), any(Runnable.class));
+			SyntheticValueSource scopedUnproved = SyntheticValueSource.forEvaluation(unproved);
+			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedUnproved, strategy, context,
+							physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(candidate).as("the exact census remains available as an executable fallback").isNotNull();
+			RowState unprovedRow = new RowState(scopedUnproved, layout, EmptyBindingSet.getInstance());
+			NativeAggregateAlternative.Prepared unprovedPrepared = ((NativeAggregateAlternative) candidate)
+					.prepare(unprovedRow);
+			assertThat(unprovedPrepared.quote(unprovedRow))
+					.as("without source-owned canonical identity its reducer and storage work stay unknown")
+					.isNull();
+			System.setProperty(NATIVE, "false");
+			List<BindingSet> expected;
+			try {
+				expected = rows(CENSUS);
+			} finally {
+				System.setProperty(NATIVE, "true");
+			}
+			List<BindingSet> actualRows = new ArrayList<>();
+			try (var result = unprovedPrepared.evaluate(EmptyBindingSet.getInstance(), unprovedRow.cancellation)) {
+				assertThat(result).isNotNull();
+				while (result.hasNext()) {
+					actualRows.add(result.next());
+				}
+			} finally {
+				scopedUnproved.executionContext().close();
+			}
+			assertThat(actualRows).as("unsupported source exact fallback preserves the complete RDF bag")
+					.containsExactlyInAnyOrderElementsOf(expected);
+		}
+	}
+
+	@Test
+	void receiptlessCommonHeaderQuoteRetainsBothCatalogScanPasses() throws Exception {
+		String query = CENSUS;
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI subject = vf.createIRI(EX + "receiptless-subject");
+			IRI predicate = vf.createIRI(EX + "receiptless-predicate");
+			IRI graph = vf.createIRI(EX + "receiptless-graph");
+			connection.begin();
+			connection.clear();
+			for (int index = 0; index < 3_072; index++) {
+				connection.add(subject, predicate, vf.createIRI(EX + "receiptless-object-" + index), graph);
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+		List<BindingSet> expected;
+		System.setProperty(NATIVE, "false");
+		try {
+			expected = rows(query);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		assertThat(expected).hasSize(1);
+		assertThat(expected.getFirst()).as("the native-disabled oracle contains every aggregate binding").hasSize(10);
+
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource actual = (NativeLmdbQuerySource) dataset;
+			assertThat(actual.hasCanonicalIds()).isTrue();
+			int predicateCount;
+			long pageHeaders = 0L;
+			try (NativeProbe probe = actual.newProbe(); WildcardAdjacency catalog = probe.wildcardAdjacency(true)) {
+				assertThat(catalog).isNotNull();
+				predicateCount = catalog.predicateCount();
+				for (int ordinal = 0; ordinal < predicateCount; ordinal++) {
+					long predicateId = catalog.predicateAt(ordinal);
+					catalog.bind(ordinal);
+					NativeAdjacency view = probe.adjacency(predicateId, true);
+					assertThat(view).as("the real source exposes each catalog plane").isNotNull();
+					try (view; AdjacencyPageCursor pages = view.openPageCursor()) {
+						while (pages.advance()) {
+							assertThat(pages.hasCommonContext())
+									.as("the receiptless recipe uses the existing common-header path")
+									.isTrue();
+							pageHeaders = Math.addExact(pageHeaders, 1L);
+						}
+					}
+				}
+			}
+			assertThat(predicateCount).as("the real source exposes one predicate catalog entry").isEqualTo(1);
+			assertThat(pageHeaders).as("the real page source exposes nonempty header work").isPositive();
+
+			NativeLmdbQuerySource unreceipted = mock(NativeLmdbQuerySource.class, delegatesTo(actual));
+			AtomicInteger receiptCalls = new AtomicInteger();
+			doAnswer(call -> {
+				receiptCalls.incrementAndGet();
+				return null;
+			}).when(unreceipted).censusPageSweepReceipt(anyBoolean(), anyBoolean(), anyBoolean(), any(Runnable.class));
+			SyntheticValueSource scopedUnreceipted = SyntheticValueSource.forEvaluation(unreceipted);
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+			Group parsedGroup = group(root);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(parsedGroup, context, strategy);
+			Group physicalGroup = group(physical.expression());
+			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedUnreceipted, strategy, context,
+							physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(candidate).as("the existing receiptless common-header census remains executable").isNotNull();
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+			layout.freeze(List.of("s", "p", "o", "g"));
+			RowState row = new RowState(scopedUnreceipted, layout, EmptyBindingSet.getInstance());
+			try {
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				NativeAggregatePhysicalPlan.Work quote = prepared.quote(row);
+				assertThat(receiptCalls.get()).as("the optional source receipt is suppressed during preparation")
+						.isPositive();
+				assertThat(quote).as("the complete existing common-header recipe still receives a quote").isNotNull();
+				double metadataProjectionReads = 2D;
+				double expectedScanned = 2D * predicateCount + 3D * pageHeaders + metadataProjectionReads;
+				List<BindingSet> actualRows;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					actualRows = QueryResults.asList(results);
+				}
+				assertThat(actualRows).as("receiptless common-header execution preserves the complete RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(quote.extra().expected(LmdbNativeCostVector.Feature.SCANNED_ROW))
+						.as("both real predicate-catalog passes remain charged without the optional receipt")
+						.isEqualTo(expectedScanned);
+			} finally {
+				scopedUnreceipted.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void preparedReceiptObservesActiveDeadlineBeforeContinuingSourceMetadata() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		AtomicInteger receiptPolls = new AtomicInteger();
+		AtomicInteger probesOpened = new AtomicInteger();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			doAnswer(call -> {
+				boolean bySubject = call.getArgument(0);
+				boolean needSubjectNodes = call.getArgument(1);
+				boolean needObjectNodes = call.getArgument(2);
+				Runnable cancellationPoll = call.getArgument(3);
+				Runnable trippingPoll = () -> {
+					if (receiptPolls.incrementAndGet() == 1) {
+						deadline.trip();
+					}
+					cancellationPoll.run();
+				};
+				return backing.censusPageSweepReceipt(bySubject, needSubjectNodes, needObjectNodes, trippingPoll);
+			}).when(source).censusPageSweepReceipt(anyBoolean(), anyBoolean(), anyBoolean(), any(Runnable.class));
+			doAnswer(call -> {
+				probesOpened.incrementAndGet();
+				return backing.newProbe();
+			}).when(source).newProbe();
+
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					assertThatThrownBy(() -> ((NativeAggregateAlternative) candidate).prepare(row))
+							.as("the combined query/deadline callback stops receipt work at its first tripped poll")
+							.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				}
+				assertAll("deadline stops before any census probe or later receipt work",
+						() -> assertThat(deadline.tripped()).isTrue(),
+						() -> assertThat(receiptPolls.get()).isEqualTo(1),
+						() -> assertThat(probesOpened.get()).isZero(),
+						() -> assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+								.isZero());
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void censusQuoteProbeRetainsCloseFailureWhenActiveDeadlineTrips() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		IllegalStateException closeFailure = new IllegalStateException(
+				"injected real census quote-probe close failure");
+		AtomicInteger probesOpened = new AtomicInteger();
+		AtomicInteger probesClosed = new AtomicInteger();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = sourceWithCensusProbeLifecycle((NativeLmdbQuerySource) dataset,
+					probesOpened, probesClosed, deadline, 1, 1, closeFailure);
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					assertThatThrownBy(() -> ((NativeAggregateAlternative) candidate).prepare(row))
+							.as("quote-time TWR retains the real probe close failure over the deadline singleton")
+							.isSameAs(closeFailure);
+				}
+				assertThat(closeFailure.getSuppressed())
+						.as("the original suppression-disabled deadline remains attached to cleanup")
+						.contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertAll("the actual source probe is released and prepare ledger unwinds",
+						() -> assertThat(deadline.tripped()).isTrue(),
+						() -> assertThat(probesOpened.get()).isEqualTo(1),
+						() -> assertThat(probesClosed.get()).isEqualTo(1),
+						() -> assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+								.isZero());
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void censusExecutionProbeRetainsCloseFailureAndRetriesSamePreparedRow() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(CENSUS);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		IllegalStateException closeFailure = new IllegalStateException(
+				"injected real census execution-probe close failure");
+		AtomicInteger probesOpened = new AtomicInteger();
+		AtomicInteger probesClosed = new AtomicInteger();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = sourceWithCensusProbeLifecycle((NativeLmdbQuerySource) dataset,
+					probesOpened, probesClosed, deadline, 2, 2, closeFailure);
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				assertThat(prepared.quote(row)).as("the real source quote completes before the execution attempt")
+						.isNotNull();
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					assertThatThrownBy(() -> prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation))
+							.as("execution TWR retains a real probe close failure over the deadline singleton")
+							.isSameAs(closeFailure);
+				}
+				assertThat(closeFailure.getSuppressed())
+						.as("the execution close retains its original active deadline")
+						.contains(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertAll("the failed execution probe closes before same-row retry",
+						() -> assertThat(deadline.tripped()).isTrue(),
+						() -> assertThat(probesOpened.get()).isEqualTo(2),
+						() -> assertThat(probesClosed.get()).isEqualTo(2));
+
+				List<BindingSet> actual;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(results).as("the same prepared row can retry after cleanup").isNotNull();
+					actual = QueryResults.asList(results);
+				}
+				assertThat(actual).as("the successful retry preserves the full native-disabled RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(probesOpened.get()).isEqualTo(3);
+				assertThat(probesClosed.get()).isEqualTo(3);
+				assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+						.as("the retry releases the prepared-row ledger after close")
+						.isZero();
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void censusExecutionProbeCloseAfterCollectionReleasesResultAndRetriesSamePreparedRow() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(CENSUS);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		IllegalStateException closeFailure = new IllegalStateException(
+				"injected census execution-probe close failure after collection");
+		AtomicInteger probesOpened = new AtomicInteger();
+		AtomicInteger probesClosed = new AtomicInteger();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = sourceWithCensusProbeLifecycle((NativeLmdbQuerySource) dataset,
+					probesOpened, probesClosed, deadline, 0, 2, closeFailure);
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				assertThat(prepared.quote(row)).as("the complete source quote is prepared before execution")
+						.isNotNull();
+				long baseline = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes();
+				assertThat(baseline).isZero();
+
+				assertThatThrownBy(() -> prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation))
+						.as("the execution probe close fails after collection produced its private result")
+						.isSameAs(closeFailure);
+				assertAll("failed probe cleanup closes the completed result without closing the query root",
+						() -> assertThat(probesOpened.get()).isEqualTo(2),
+						() -> assertThat(probesClosed.get()).isEqualTo(2),
+						() -> assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+								.isEqualTo(baseline),
+						() -> assertThat(scopedSource.executionContext().isClosed()).isFalse());
+
+				List<BindingSet> actual;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(results).as("the same prepared row retries after result cleanup").isNotNull();
+					actual = QueryResults.asList(results);
+				}
+				assertThat(actual).as("retry returns the full native-disabled RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertAll("retry and result close restore the original query-scope baseline",
+						() -> assertThat(probesOpened.get()).isEqualTo(3),
+						() -> assertThat(probesClosed.get()).isEqualTo(3),
+						() -> assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+								.isEqualTo(baseline),
+						() -> assertThat(scopedSource.executionContext().isClosed()).isFalse());
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void censusProbeRejectsClosedDatasetAndReleasesItsPartialPin() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store);
+		NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+		NativeLmdbQuerySource.CensusPageSweepReceipt receipt = source.censusPageSweepReceipt(true, true, true,
+				() -> {
+				});
+		assertThat(receipt).as("the real immutable source provides the certified census receipt").isNotNull();
+		NativeProbe holder = source.newProbe();
+		NativeProbe attempt = source.newProbe();
+		ExecutorService executor = Executors.newSingleThreadExecutor();
+		Future<?> closeFuture = null;
+		try {
+			WildcardAdjacency heldCatalog = holder.censusPageSweep(receipt, () -> {
+			});
+			assertThat(heldCatalog).as("the first probe pins the source while retaining its catalog").isNotNull();
+			CountDownLatch closeStarted = new CountDownLatch(1);
+			closeFuture = executor.submit(() -> {
+				closeStarted.countDown();
+				dataset.close();
+			});
+			assertThat(closeStarted.await(2, TimeUnit.SECONDS)).as("the real dataset close starts").isTrue();
+
+			long closeObservationDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+			boolean closeObserved = false;
+			while (!closeObserved && System.nanoTime() < closeObservationDeadline) {
+				try {
+					assertThat(source.censusPageSweepReceipt(true, true, true, () -> {
+					}))
+							.as("the receipt remains available until close publishes its closed state")
+							.isNotNull();
+				} catch (QueryInterruptedException closed) {
+					closeObserved = true;
+				}
+				if (!closeObserved) {
+					Thread.onSpinWait();
+				}
+			}
+			assertThat(closeObserved).as("the real source reports close while its prior probe still pins it").isTrue();
+			AtomicInteger attemptPolls = new AtomicInteger();
+			assertThatThrownBy(() -> attempt.censusPageSweep(receipt, attemptPolls::incrementAndGet))
+					.as("a certified attempt fails loudly against the closed source")
+					.isInstanceOf(QueryInterruptedException.class);
+			assertThat(attemptPolls.get()).as("the attempt callback is observed before the source check").isPositive();
+			attempt.close();
+			assertThat(closeFuture.isDone())
+					.as("the failed attempt is closed while the separate held probe still blocks dataset close")
+					.isFalse();
+		} finally {
+			attempt.close();
+			holder.close();
+			if (closeFuture != null) {
+				closeFuture.get(3, TimeUnit.SECONDS);
+			}
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(2, TimeUnit.SECONDS)).as("the close worker terminates").isTrue();
+		}
+	}
+
+	@Test
+	void censusPageSweepRetainsDeadlineWhenProbeCloseFails() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource.CensusPageSweepReceipt receipt = source.censusPageSweepReceipt(true, true, true,
+					() -> {
+					});
+			assertThat(receipt).as("the real source returns its immutable census receipt").isNotNull();
+
+			AtomicInteger expectedPolls = new AtomicInteger();
+			try (NativeProbe calibration = source.newProbe()) {
+				assertThat(calibration.censusPageSweep(receipt, expectedPolls::incrementAndGet))
+						.as("calibration binds the real complete catalog")
+						.isNotNull();
+			}
+			assertThat(expectedPolls.get()).as("the real catalog path reaches its final post-bind poll").isPositive();
+
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			IllegalStateException closeFailure = new IllegalStateException(
+					"injected census catalog probe close failure");
+			AtomicInteger closeCalls = new AtomicInteger();
+			NativeProbe probe = spy(source.newProbe());
+			doAnswer(closeCall -> {
+				Object result = closeCall.callRealMethod();
+				if (closeCalls.incrementAndGet() == 1) {
+					throw closeFailure;
+				}
+				return result;
+			}).when(probe).close();
+			AtomicInteger actualPolls = new AtomicInteger();
+			Throwable failure = null;
+			WildcardAdjacency catalog = null;
+			try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+				try {
+					catalog = probe.censusPageSweep(receipt, () -> {
+						if (actualPolls.incrementAndGet() == expectedPolls.get()) {
+							deadline.trip();
+						}
+						LmdbNativeProbeDeadline.poll(0);
+					});
+				} catch (Throwable observed) {
+					failure = observed;
+				}
+			}
+			failure = KernelRuntime.closeResource(catalog, failure);
+			failure = KernelRuntime.closeResource(probe, failure);
+			Throwable observed = failure;
+			assertAll("the source owner retains deadline and real catalog cleanup failure",
+					() -> assertThat(actualPolls.get()).isEqualTo(expectedPolls.get()),
+					() -> assertThat(deadline.tripped()).isTrue(),
+					() -> assertThat(observed).isSameAs(closeFailure),
+					() -> assertThat(closeFailure.getSuppressed())
+							.contains(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(closeCalls.get()).as("the real probe close ran").isPositive());
+		}
+	}
+
+	@Test
+	void censusAdjacencyRetainsDeadlineWhenProbeCloseFailsAfterBind() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			long predicate = source.idOf(repository.getValueFactory().createIRI(EX + "mixed-page-predicate"));
+			assertThat(predicate).as("the fixture predicate resolves in the real source").isPositive();
+
+			AtomicInteger expectedPolls = new AtomicInteger();
+			try (NativeProbe calibration = source.newProbe()) {
+				NativeAdjacency adjacency = calibration.censusAdjacency(predicate, true,
+						expectedPolls::incrementAndGet);
+				assertThat(adjacency).as("calibration binds the real predicate view").isNotNull();
+				adjacency.close();
+			}
+			assertThat(expectedPolls.get()).as("the predicate path reaches its final pre-transfer poll").isPositive();
+
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			IllegalStateException closeFailure = new IllegalStateException(
+					"injected census adjacency probe close failure");
+			AtomicInteger closeCalls = new AtomicInteger();
+			NativeProbe probe = spy(source.newProbe());
+			doAnswer(closeCall -> {
+				Object result = closeCall.callRealMethod();
+				if (closeCalls.incrementAndGet() == 1) {
+					throw closeFailure;
+				}
+				return result;
+			}).when(probe).close();
+			long hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
+			AtomicInteger actualPolls = new AtomicInteger();
+			Throwable failure = null;
+			NativeAdjacency adjacency = null;
+			try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+				try {
+					adjacency = probe.censusAdjacency(predicate, true, () -> {
+						if (actualPolls.incrementAndGet() == expectedPolls.get()) {
+							deadline.trip();
+						}
+						LmdbNativeProbeDeadline.poll(0);
+					});
+				} catch (Throwable observed) {
+					failure = observed;
+				}
+			}
+			failure = KernelRuntime.closeResource(adjacency, failure);
+			failure = KernelRuntime.closeResource(probe, failure);
+			Throwable observed = failure;
+			assertAll("the actual bound view reaches transfer while the source owner retains close failure",
+					() -> assertThat(actualPolls.get()).isEqualTo(expectedPolls.get()),
+					() -> assertThat(AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore).isEqualTo(1L),
+					() -> assertThat(deadline.tripped()).isTrue(),
+					() -> assertThat(observed).isSameAs(closeFailure),
+					() -> assertThat(closeFailure.getSuppressed())
+							.contains(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(closeCalls.get()).as("the real probe close ran").isPositive());
+		}
+	}
+
+	@Test
+	void censusAdjacencyRetainsDeadlineWhenDirectBindCloseFailsBeforeTransfer() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		try (SailDataset dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			long predicate = source.idOf(repository.getValueFactory().createIRI(EX + "mixed-page-predicate"));
+			assertThat(predicate).as("the fixture predicate resolves in the real source").isPositive();
+
+			AtomicInteger expectedPolls = new AtomicInteger();
+			try (NativeProbe calibration = source.newProbe()) {
+				NativeAdjacency adjacency = calibration.censusAdjacency(predicate, true,
+						expectedPolls::incrementAndGet);
+				assertThat(adjacency).as("calibration binds the real predicate view").isNotNull();
+				adjacency.close();
+			}
+			assertThat(expectedPolls.get()).as("the predicate path has a post-construction bind poll").isGreaterThan(1);
+
+			LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+			IllegalStateException closeFailure = new IllegalStateException(
+					"injected census direct-bind probe close failure");
+			AtomicInteger closeCalls = new AtomicInteger();
+			NativeProbe probe = spy(source.newProbe());
+			doAnswer(closeCall -> {
+				Object result = closeCall.callRealMethod();
+				if (closeCalls.incrementAndGet() == 1) {
+					throw closeFailure;
+				}
+				return result;
+			}).when(probe).close();
+			long hitsBefore = AdjacencyEngagementTestAccess.lookupHits(store);
+			AtomicInteger actualPolls = new AtomicInteger();
+			Throwable failure = null;
+			NativeAdjacency adjacency = null;
+			try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+				try {
+					adjacency = probe.censusAdjacency(predicate, true, () -> {
+						if (actualPolls.incrementAndGet() == expectedPolls.get() - 1) {
+							deadline.trip();
+						}
+						LmdbNativeProbeDeadline.poll(0);
+					});
+				} catch (Throwable observed) {
+					failure = observed;
+				}
+			}
+			failure = KernelRuntime.closeResource(adjacency, failure);
+			failure = KernelRuntime.closeResource(probe, failure);
+			Throwable observed = failure;
+			assertAll("the direct bind callback after view construction retains cleanup through the probe owner",
+					() -> assertThat(actualPolls.get()).isEqualTo(expectedPolls.get() - 1),
+					() -> assertThat(AdjacencyEngagementTestAccess.lookupHits(store) - hitsBefore).isZero(),
+					() -> assertThat(deadline.tripped()).isTrue(),
+					() -> assertThat(observed).isSameAs(closeFailure),
+					() -> assertThat(closeFailure.getSuppressed())
+							.contains(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+					() -> assertThat(closeCalls.get()).as("the real probe close ran").isPositive());
+		}
+	}
+
+	@Test
+	void censusCatalogBindStopsBeforeCompletingLookupWhenAttemptDeadlineTrips() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(CENSUS);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		AtomicBoolean firstAttempt = new AtomicBoolean();
+		AtomicBoolean injected = new AtomicBoolean();
+		AtomicInteger catalogPolls = new AtomicInteger();
+		AtomicInteger completedBindingsAfterTrip = new AtomicInteger();
+		AtomicInteger keyCountCallsAfterTrip = new AtomicInteger();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			doAnswer(sourceCall -> {
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
+				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
+				doAnswer(censusCall -> {
+					NativeLmdbQuerySource.CensusPageSweepReceipt receipt = censusCall.getArgument(0);
+					Runnable cancellationPoll = censusCall.getArgument(1);
+					WildcardAdjacency realCatalog = realProbe.censusPageSweep(receipt, cancellationPoll);
+					assertThat(realCatalog).as("the actual source offers its certified predicate catalog").isNotNull();
+					WildcardAdjacency wrappedCatalog = mock(WildcardAdjacency.class, delegatesTo(realCatalog));
+					doAnswer(bindCall -> {
+						int ordinal = bindCall.getArgument(0);
+						boolean tripThisBind = injected.compareAndSet(false, true);
+						if (tripThisBind) {
+							deadline.trip();
+						}
+						realCatalog.bind(ordinal);
+						if (tripThisBind && deadline.tripped()) {
+							completedBindingsAfterTrip.incrementAndGet();
+						}
+						return null;
+					}).when(wrappedCatalog).bind(anyInt());
+					doAnswer(bindCall -> {
+						int ordinal = bindCall.getArgument(0);
+						Runnable bindPoll = bindCall.getArgument(1);
+						Runnable trippingPoll = () -> {
+							if (firstAttempt.get() && catalogPolls.incrementAndGet() == 4
+									&& injected.compareAndSet(false, true)) {
+								deadline.trip();
+							}
+							bindPoll.run();
+						};
+						boolean bound = realCatalog.bindCensusPredicate(ordinal, trippingPoll);
+						if (firstAttempt.get() && deadline.tripped()) {
+							completedBindingsAfterTrip.incrementAndGet();
+						}
+						return bound;
+					}).when(wrappedCatalog).bindCensusPredicate(anyInt(), any(Runnable.class));
+					doAnswer(keyCall -> {
+						if (firstAttempt.get() && deadline.tripped()) {
+							keyCountCallsAfterTrip.incrementAndGet();
+						}
+						return realCatalog.keyCount();
+					}).when(wrappedCatalog).keyCount();
+					return wrappedCatalog;
+				}).when(wrappedProbe)
+						.censusPageSweep(
+								any(NativeLmdbQuerySource.CensusPageSweepReceipt.class), any(Runnable.class));
+				return wrappedProbe;
+			}).when(source).newProbe(nullable(CursorCancellation.class));
+
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				firstAttempt.set(true);
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					assertThatThrownBy(() -> ((NativeAggregateAlternative) candidate).prepare(row))
+							.as("the actual catalog bind must observe the active deadline")
+							.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				} finally {
+					firstAttempt.set(false);
+				}
+				assertThat(deadline.tripped()).isTrue();
+				assertThat(catalogPolls.get())
+						.as("the real segmented bind polls before entering its segment search")
+						.isEqualTo(4);
+				assertThat(completedBindingsAfterTrip.get())
+						.as("a tripped callback must stop before completing the segmented catalog lookup")
+						.isZero();
+				assertThat(keyCountCallsAfterTrip.get())
+						.as("no bound-plane metadata may be read after catalog lookup cancellation")
+						.isZero();
+
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				assertThat(prepared.quote(row)).as("the same row can prepare again after deadline cleanup").isNotNull();
+				List<BindingSet> actual;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					actual = QueryResults.asList(results);
+				}
+				assertThat(actual).as("retry preserves the complete native-disabled RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void censusPhysicalPageCursorInstallsAttemptPollBeforeHeaderAdvance() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(CENSUS);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		AtomicBoolean firstAttempt = new AtomicBoolean();
+		AtomicBoolean injected = new AtomicBoolean();
+		AtomicInteger callbackAwareOpens = new AtomicInteger();
+		AtomicInteger legacyOpens = new AtomicInteger();
+		AtomicInteger physicalAdvances = new AtomicInteger();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			doAnswer(sourceCall -> {
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
+				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
+				doAnswer(adjacencyCall -> {
+					long predicate = adjacencyCall.getArgument(0);
+					boolean bySubject = adjacencyCall.getArgument(1);
+					NativeAdjacency realAdjacency = realProbe.adjacency(predicate, bySubject);
+					assertThat(realAdjacency).as("the actual probe returns its retained adjacency view").isNotNull();
+					NativeAdjacency wrappedAdjacency = mock(NativeAdjacency.class, delegatesTo(realAdjacency));
+					doAnswer(openCall -> {
+						if (firstAttempt.get()) {
+							legacyOpens.incrementAndGet();
+							if (injected.compareAndSet(false, true)) {
+								deadline.trip();
+							}
+						}
+						AdjacencyPageCursor realCursor = realAdjacency.openPageCursor();
+						return wrapCensusPageCursor(realCursor, firstAttempt, physicalAdvances);
+					}).when(wrappedAdjacency).openPageCursor();
+					doAnswer(openCall -> {
+						if (firstAttempt.get()) {
+							callbackAwareOpens.incrementAndGet();
+							if (injected.compareAndSet(false, true)) {
+								deadline.trip();
+							}
+						}
+						Runnable cancellationPoll = openCall.getArgument(0);
+						cancellationPoll.run();
+						AdjacencyPageCursor realCursor = realAdjacency.openPageCursor(cancellationPoll);
+						return wrapCensusPageCursor(realCursor, firstAttempt, physicalAdvances);
+					}).when(wrappedAdjacency).openPageCursor(any(Runnable.class));
+					return wrappedAdjacency;
+				}).when(wrappedProbe).adjacency(anyLong(), anyBoolean());
+				doAnswer(adjacencyCall -> {
+					long predicate = adjacencyCall.getArgument(0);
+					boolean bySubject = adjacencyCall.getArgument(1);
+					Runnable cancellationPoll = adjacencyCall.getArgument(2);
+					NativeAdjacency realAdjacency = realProbe.censusAdjacency(predicate, bySubject, cancellationPoll);
+					assertThat(realAdjacency).as("the certified probe returns its retained adjacency view").isNotNull();
+					NativeAdjacency wrappedAdjacency = mock(NativeAdjacency.class, delegatesTo(realAdjacency));
+					doAnswer(openCall -> {
+						if (firstAttempt.get()) {
+							legacyOpens.incrementAndGet();
+							if (injected.compareAndSet(false, true)) {
+								deadline.trip();
+							}
+						}
+						return wrapCensusPageCursor(realAdjacency.openPageCursor(), firstAttempt, physicalAdvances);
+					}).when(wrappedAdjacency).openPageCursor();
+					doAnswer(openCall -> {
+						if (firstAttempt.get()) {
+							callbackAwareOpens.incrementAndGet();
+							if (injected.compareAndSet(false, true)) {
+								deadline.trip();
+							}
+						}
+						Runnable pagePoll = openCall.getArgument(0);
+						pagePoll.run();
+						return wrapCensusPageCursor(realAdjacency.openPageCursor(pagePoll), firstAttempt,
+								physicalAdvances);
+					}).when(wrappedAdjacency).openPageCursor(any(Runnable.class));
+					return wrappedAdjacency;
+				}).when(wrappedProbe).censusAdjacency(anyLong(), anyBoolean(), any(Runnable.class));
+				return wrappedProbe;
+			}).when(source).newProbe(nullable(CursorCancellation.class));
+
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				firstAttempt.set(true);
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					assertThatThrownBy(() -> ((NativeAggregateAlternative) candidate).prepare(row))
+							.as("the certified cursor observes the attempt deadline at physical setup")
+							.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				} finally {
+					firstAttempt.set(false);
+				}
+				assertThat(deadline.tripped()).isTrue();
+				assertThat(callbackAwareOpens.get())
+						.as("the certified page cursor receives the active attempt poll")
+						.isEqualTo(1);
+				assertThat(legacyOpens.get()).as("the certified recipe does not use an unpolled page opener").isZero();
+				assertThat(physicalAdvances.get())
+						.as("deadline polling occurs before the first physical page header is read")
+						.isZero();
+
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				assertThat(prepared.quote(row)).as("same-row retry restores the complete census quote").isNotNull();
+				List<BindingSet> actual;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					actual = QueryResults.asList(results);
+				}
+				assertThat(actual).as("same-row retry preserves the complete native-disabled RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	private static AdjacencyPageCursor wrapCensusPageCursor(AdjacencyPageCursor delegate,
+			AtomicBoolean countAdvances, AtomicInteger advances) {
+		assertThat(delegate).as("the real immutable page cursor is present").isNotNull();
+		AdjacencyPageCursor wrapped = mock(AdjacencyPageCursor.class, delegatesTo(delegate));
+		doAnswer(call -> {
+			if (countAdvances.get()) {
+				advances.incrementAndGet();
+			}
+			return delegate.advance();
+		}).when(wrapped).advance();
+		return wrapped;
+	}
+
+	@Test
+	void censusExecutionPollsAfterPhysicalEofBeforePublishingResults() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(CENSUS);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		AtomicInteger probesOpened = new AtomicInteger();
+		AtomicBoolean executionEofTripped = new AtomicBoolean();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			doAnswer(sourceCall -> {
+				int probeNumber = probesOpened.incrementAndGet();
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
+				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
+				doAnswer(adjacencyCall -> {
+					long predicate = adjacencyCall.getArgument(0);
+					boolean bySubject = adjacencyCall.getArgument(1);
+					NativeAdjacency realAdjacency = realProbe.adjacency(predicate, bySubject);
+					assertThat(realAdjacency).as("the actual source returns its retained predicate view").isNotNull();
+					NativeAdjacency wrappedAdjacency = mock(NativeAdjacency.class, delegatesTo(realAdjacency));
+					doAnswer(openCall -> wrapCensusEofCursor(realAdjacency.openPageCursor(), probeNumber,
+							executionEofTripped, deadline)).when(wrappedAdjacency).openPageCursor();
+					doAnswer(openCall -> {
+						Runnable cancellationPoll = openCall.getArgument(0);
+						return wrapCensusEofCursor(realAdjacency.openPageCursor(cancellationPoll), probeNumber,
+								executionEofTripped, deadline);
+					}).when(wrappedAdjacency).openPageCursor(any(Runnable.class));
+					return wrappedAdjacency;
+				}).when(wrappedProbe).adjacency(anyLong(), anyBoolean());
+				doAnswer(adjacencyCall -> {
+					long predicate = adjacencyCall.getArgument(0);
+					boolean bySubject = adjacencyCall.getArgument(1);
+					Runnable cancellationPoll = adjacencyCall.getArgument(2);
+					NativeAdjacency realAdjacency = realProbe.censusAdjacency(predicate, bySubject, cancellationPoll);
+					assertThat(realAdjacency).as("the certified source returns its retained predicate view")
+							.isNotNull();
+					NativeAdjacency wrappedAdjacency = mock(NativeAdjacency.class, delegatesTo(realAdjacency));
+					doAnswer(openCall -> wrapCensusEofCursor(realAdjacency.openPageCursor(), probeNumber,
+							executionEofTripped, deadline)).when(wrappedAdjacency).openPageCursor();
+					doAnswer(openCall -> {
+						Runnable pagePoll = openCall.getArgument(0);
+						return wrapCensusEofCursor(realAdjacency.openPageCursor(pagePoll), probeNumber,
+								executionEofTripped, deadline);
+					}).when(wrappedAdjacency).openPageCursor(any(Runnable.class));
+					return wrappedAdjacency;
+				}).when(wrappedProbe).censusAdjacency(anyLong(), anyBoolean(), any(Runnable.class));
+				return wrappedProbe;
+			}).when(source).newProbe(nullable(CursorCancellation.class));
+
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			QueryEvaluationStep candidate = censusCandidate(scopedSource, dataset, CENSUS);
+			RowState row = censusRow(scopedSource);
+			try {
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				assertThat(prepared.quote(row)).as("the real census recipe is prepared before execution").isNotNull();
+				long ledgerBaseline = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes();
+				AtomicBoolean resultCursorReturned = new AtomicBoolean();
+				Throwable observed = null;
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						resultCursorReturned.set(true);
+						if (results.hasNext()) {
+							observed = new AssertionError(
+									"a census result became visible after physical EOF tripped deadline");
+						}
+					} catch (RuntimeException | Error failure) {
+						observed = failure;
+					}
+				}
+				assertThat(executionEofTripped.get())
+						.as("the real execution page cursor reached its exhausted-page boundary")
+						.isTrue();
+				assertThat(resultCursorReturned.get())
+						.as("the attempt checks its deadline before the private collector result is published")
+						.isFalse();
+				assertThat(observed)
+						.as("the active attempt is polled after EOF and before publishing the collector result")
+						.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE);
+				assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+						.as("EOF deadline cleanup restores the prepared-row ledger")
+						.isEqualTo(ledgerBaseline);
+
+				List<BindingSet> actual;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					actual = QueryResults.asList(results);
+				}
+				assertThat(actual).as("same-row retry returns the complete native-disabled RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+						.as("successful retry also restores the prepared-row ledger")
+						.isEqualTo(ledgerBaseline);
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	@Test
+	void censusExecutionPollsAfterReductionEofBeforePublishingResults() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		String globalQuery = "SELECT (SUM(IF(isIRI(?o), 1, 0)) AS ?iriObjectQuads) "
+				+ "WHERE { GRAPH ?g { ?s ?p ?o } }";
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(globalQuery);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		LmdbNativeProbeDeadline deadline = LmdbNativeProbeDeadline.trippableOnly();
+		AtomicInteger probesOpened = new AtomicInteger();
+		AtomicInteger executionCursorsOpened = new AtomicInteger();
+		AtomicBoolean firstExecution = new AtomicBoolean();
+		AtomicBoolean reductionEofTripped = new AtomicBoolean();
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			doAnswer(sourceCall -> {
+				probesOpened.incrementAndGet();
+				NativeProbe realProbe = backing.newProbe(sourceCall.getArgument(0));
+				NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
+				doAnswer(adjacencyCall -> {
+					long predicate = adjacencyCall.getArgument(0);
+					boolean bySubject = adjacencyCall.getArgument(1);
+					NativeAdjacency realAdjacency = realProbe.adjacency(predicate, bySubject);
+					return wrapCensusReductionAdjacency(realAdjacency, firstExecution, executionCursorsOpened,
+							reductionEofTripped, deadline);
+				}).when(wrappedProbe).adjacency(anyLong(), anyBoolean());
+				doAnswer(adjacencyCall -> {
+					long predicate = adjacencyCall.getArgument(0);
+					boolean bySubject = adjacencyCall.getArgument(1);
+					Runnable poll = adjacencyCall.getArgument(2);
+					NativeAdjacency realAdjacency = realProbe.censusAdjacency(predicate, bySubject, poll);
+					return wrapCensusReductionAdjacency(realAdjacency, firstExecution, executionCursorsOpened,
+							reductionEofTripped, deadline);
+				}).when(wrappedProbe).censusAdjacency(anyLong(), anyBoolean(), any(Runnable.class));
+				return wrappedProbe;
+			}).when(source).newProbe(nullable(CursorCancellation.class));
+
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			CensusCandidateWithTarget captured = censusCandidateWithTarget(scopedSource, dataset, globalQuery);
+			captured.logicalExpression().setExecutionSummaryEnabled(true);
+			captured.logicalExpression().setRuntimeTelemetryEnabled(true);
+			captured.logicalRoot().setExecutionSummaryEnabled(true);
+			captured.logicalRoot().setRuntimeTelemetryEnabled(true);
+			captured.explainTarget().setExecutionSummaryEnabled(true);
+			captured.explainTarget().setRuntimeTelemetryEnabled(true);
+			QueryEvaluationStep candidate = captured.step();
+			RowState row = censusRow(scopedSource);
+			try {
+				NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+				assertThat(prepared.quote(row)).as("the real census quote completes before execution").isNotNull();
+				long ledgerBaseline = row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes();
+				AtomicBoolean resultCursorReturned = new AtomicBoolean();
+				List<BindingSet> firstAttemptBag = List.of();
+				Throwable observed = null;
+				firstExecution.set(true);
+				try (LmdbNativeProbeDeadline.Scope ignored = LmdbNativeProbeDeadline.enter(deadline)) {
+					try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+						if (results != null) {
+							resultCursorReturned.set(true);
+							firstAttemptBag = QueryResults.asList(results);
+						}
+					} catch (RuntimeException | Error failure) {
+						observed = failure;
+					}
+				} finally {
+					firstExecution.set(false);
+				}
+				boolean executionPathPublished = LmdbNativeExplain.hasExecutionPath(captured.explainTarget(),
+						LmdbNativeCensusAggregate.PATH);
+				assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+						.as("the interrupted attempt releases its collector and restores the prepared-row ledger")
+						.isEqualTo(ledgerBaseline);
+
+				List<BindingSet> retry;
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					retry = QueryResults.asList(results);
+				}
+				assertThat(retry).as("same-prepared retry returns the complete native-disabled RDF bag")
+						.containsExactlyInAnyOrderElementsOf(expected);
+				assertThat(LmdbNativeExplain.hasExecutionPath(captured.explainTarget(),
+						LmdbNativeCensusAggregate.PATH))
+								.as("the successful same-row retry proves the execution telemetry target is enabled")
+								.isTrue();
+				assertThat(row.memoryScope.ledger(LmdbNativeHashJoin.queryMemory()).usedBytes())
+						.as("the successful retry restores the prepared-row ledger")
+						.isEqualTo(ledgerBaseline);
+
+				assertThat(probesOpened.get()).as("the source query opens real probe owners").isGreaterThanOrEqualTo(2);
+				assertThat(reductionEofTripped.get())
+						.as("the second first-attempt cursor reaches reduction's real exhausted-page boundary; opens="
+								+ executionCursorsOpened.get())
+						.isTrue();
+				assertThat(executionCursorsOpened.get())
+						.as("the first execution opens coverage and reduction cursors")
+						.isEqualTo(2);
+				Throwable firstAttemptFailure = observed;
+				List<BindingSet> firstBag = firstAttemptBag;
+				assertAll("reduction EOF cancellation precedes result and telemetry publication",
+						() -> assertThat(resultCursorReturned.get())
+								.as("the reduction EOF deadline must stop before a result cursor is published")
+								.isFalse(),
+						() -> assertThat(firstAttemptFailure)
+								.as("the reduction EOF deadline remains the failed attempt's primary signal")
+								.isSameAs(LmdbNativeProbeDeadlineExceeded.INSTANCE),
+						() -> assertThat(firstBag)
+								.as("no bindings escape the interrupted attempt")
+								.isEmpty(),
+						() -> assertThat(executionPathPublished)
+								.as("the interrupted attempt must not publish native execution telemetry")
+								.isFalse());
+			} finally {
+				scopedSource.executionContext().close();
+			}
+		}
+	}
+
+	private static AdjacencyPageCursor wrapCensusEofCursor(AdjacencyPageCursor delegate, int probeNumber,
+			AtomicBoolean executionEofTripped, LmdbNativeProbeDeadline deadline) {
+		assertThat(delegate).as("the real immutable page cursor is present").isNotNull();
+		AdjacencyPageCursor wrapped = mock(AdjacencyPageCursor.class, delegatesTo(delegate));
+		doAnswer(call -> {
+			boolean advanced = delegate.advance();
+			if (probeNumber == 2 && !advanced && executionEofTripped.compareAndSet(false, true)) {
+				deadline.trip();
+			}
+			return advanced;
+		}).when(wrapped).advance();
+		return wrapped;
+	}
+
+	private static NativeAdjacency wrapCensusReductionAdjacency(NativeAdjacency delegate,
+			AtomicBoolean firstExecution, AtomicInteger executionCursorsOpened,
+			AtomicBoolean reductionEofTripped, LmdbNativeProbeDeadline deadline) {
+		assertThat(delegate).as("the real immutable adjacency view is present").isNotNull();
+		NativeAdjacency wrapped = mock(NativeAdjacency.class, delegatesTo(delegate));
+		doAnswer(call -> {
+			int cursorNumber = firstExecution.get() ? executionCursorsOpened.incrementAndGet() : 0;
+			return wrapCensusReductionEofCursor(delegate.openPageCursor(), cursorNumber, reductionEofTripped, deadline);
+		}).when(wrapped).openPageCursor();
+		doAnswer(call -> {
+			Runnable cancellationPoll = call.getArgument(0);
+			int cursorNumber = firstExecution.get() ? executionCursorsOpened.incrementAndGet() : 0;
+			return wrapCensusReductionEofCursor(delegate.openPageCursor(cancellationPoll), cursorNumber,
+					reductionEofTripped, deadline);
+		}).when(wrapped).openPageCursor(any(Runnable.class));
+		return wrapped;
+	}
+
+	private static AdjacencyPageCursor wrapCensusReductionEofCursor(AdjacencyPageCursor delegate, int cursorNumber,
+			AtomicBoolean reductionEofTripped, LmdbNativeProbeDeadline deadline) {
+		assertThat(delegate).as("the real immutable page cursor is present").isNotNull();
+		AdjacencyPageCursor wrapped = mock(AdjacencyPageCursor.class, delegatesTo(delegate));
+		doAnswer(call -> {
+			boolean advanced = delegate.advance();
+			if (cursorNumber == 2 && !advanced
+					&& reductionEofTripped.compareAndSet(false, true)) {
+				deadline.trip();
+			}
+			return advanced;
+		}).when(wrapped).advance();
+		return wrapped;
+	}
+
+	private QueryEvaluationStep censusCandidate(NativeLmdbQuerySource source, SailDataset dataset, String query) {
+		return censusCandidateWithTarget(source, dataset, query).step();
+	}
+
+	private CensusCandidateWithTarget censusCandidateWithTarget(NativeLmdbQuerySource source, SailDataset dataset,
+			String query) {
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, query, null).getTupleExpr();
+		Group group = group(root);
+		var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+		LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+				new EvaluationStatistics(), false);
+		QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+		NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
+		Group physicalGroup = group(physical.expression());
+		QueryEvaluationStep step = strategy.withValuePositions(physical.positions(),
+				() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, source, strategy, context,
+						physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+		return new CensusCandidateWithTarget(step, physical.expression(), group, root);
+	}
+
+	private record CensusCandidateWithTarget(QueryEvaluationStep step, TupleExpr explainTarget,
+			TupleExpr logicalExpression, TupleExpr logicalRoot) {
+	}
+
+	private static RowState censusRow(NativeLmdbQuerySource source) {
+		NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+		layout.freeze(List.of("s", "p", "o", "g"));
+		return new RowState(source, layout, EmptyBindingSet.getInstance());
+	}
+
+	private static NativeLmdbQuerySource sourceWithCensusProbeLifecycle(NativeLmdbQuerySource backing,
+			AtomicInteger probesOpened, AtomicInteger probesClosed, LmdbNativeProbeDeadline deadline,
+			int tripOnProbe, int failCloseOnProbe, RuntimeException closeFailure) throws Exception {
+		NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+		doAnswer(call -> {
+			int probeNumber = probesOpened.incrementAndGet();
+			NativeProbe realProbe = backing.newProbe(call.getArgument(0));
+			NativeProbe wrappedProbe = mock(NativeProbe.class, delegatesTo(realProbe));
+			doAnswer(censusCall -> {
+				NativeLmdbQuerySource.CensusPageSweepReceipt receipt = censusCall.getArgument(0);
+				Runnable cancellationPoll = censusCall.getArgument(1);
+				WildcardAdjacency wildcard = realProbe.censusPageSweep(receipt, cancellationPoll);
+				if (probeNumber == tripOnProbe) {
+					deadline.trip();
+				}
+				return wildcard;
+			}).when(wrappedProbe)
+					.censusPageSweep(
+							any(NativeLmdbQuerySource.CensusPageSweepReceipt.class), any(Runnable.class));
+			doAnswer(closeCall -> {
+				probesClosed.incrementAndGet();
+				realProbe.close();
+				if (probeNumber == failCloseOnProbe) {
+					throw closeFailure;
+				}
+				return null;
+			}).when(wrappedProbe).close();
+			return wrappedProbe;
+		}).when(source).newProbe(nullable(CursorCancellation.class));
+		return source;
+	}
+
+	private record UnforcedGroupRun(List<BindingSet> expected, List<BindingSet> actual,
+			LmdbNativeDecisionRecord decision, String selected) {
+	}
+
+	private void populateHeaderOnlyCensusFixture(int rootCount, int quadsPerRoot) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI predicate = vf.createIRI(EX + "header-only-predicate");
+			IRI graph = vf.createIRI(EX + "header-only-graph");
+			connection.begin();
+			connection.clear();
+			for (int root = 0; root < rootCount; root++) {
+				IRI subject = vf.createIRI(EX + "header-only-subject-" + root);
+				for (int quad = 0; quad < quadsPerRoot; quad++) {
+					IRI object = vf.createIRI(EX + "header-only-object-" + root + "-" + quad);
+					connection.add(subject, predicate, object, graph);
+				}
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+	}
+
+	private void populateMixedNamedGraphFixture(boolean includeDefault) {
+		populateMixedNamedGraphFixture(includeDefault, 2);
+	}
+
+	private void populateMixedNamedGraphFixture(boolean includeDefault, int graphCount) {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI predicate = vf.createIRI(EX + "mixed-page-predicate");
+			IRI[] graphs = { vf.createIRI(EX + "mixed-page-graph-one"),
+					vf.createIRI(EX + "mixed-page-graph-two"), vf.createIRI(EX + "mixed-page-graph-three") };
+			if (graphCount < 2 || graphCount > graphs.length) {
+				throw new IllegalArgumentException("mixed fixture graph count must be 2 or 3");
+			}
+			connection.begin();
+			connection.clear();
+			for (int index = 0; index < 3_072; index++) {
+				var subject = index % 32 == 0
+						? vf.createBNode("mixed-subject-" + index)
+						: vf.createIRI(EX + "mixed-subject-" + index / 64);
+				var object = switch (index % 3) {
+				case 0 -> vf.createIRI(EX + "mixed-object-" + index);
+				case 1 -> vf.createLiteral("mixed-object-" + index);
+				default -> vf.createBNode("mixed-object-" + index);
+				};
+				for (int graph = 0; graph < graphCount; graph++) {
+					connection.add(subject, predicate, object, graphs[graph]);
+				}
+			}
+			if (includeDefault) {
+				connection.add(vf.createIRI(EX + "mixed-default-subject"), predicate,
+						vf.createIRI(EX + "mixed-default-object"));
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+	}
+
+	private record PhysicalGrain(long headers, long contributions, long quads, long pageRootVisits,
+			int predicates, long logicalRoots, long contextPrefixReads, int mixedPagesWithPrefix,
+			long contextPrefixValidationReads, int nonemptyPredicates, long shardDescriptors) {
+	}
+
+	private record HeaderOnlyGrain(int predicates, int nonemptyPredicates, int predicateSegments,
+			long shardDescriptors, long pages, long shardTransitionsUpperBound,
+			long contributions, long pageRootVisits, long logicalRoots, long quads, long subjectNodes,
+			long objectNodes, long defaultContextQuads) {
+	}
+
+	private HeaderOnlyGrain assertHeaderOnlyPageEvidence(long expectedRoots, long expectedQuads,
+			long expectedPages, long expectedPageRootVisits) throws Exception {
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			assertThat(source.hasCanonicalIds()).as("the compacted source has canonical RDF-term identity").isTrue();
+			assertThat(source.countsContextFromMetadata(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))
+					.as("default-context coverage is authoritative on this explicit snapshot")
+					.isTrue();
+			long defaultContextQuads = source.count(NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+					LmdbNativeAggregateCompiler.NULL_CONTEXT_ID);
+			assertThat(defaultContextQuads).as("GRAPH ?g excludes default-context quads").isZero();
+			NativeLmdbQuerySource.CensusPageSweepReceipt receipt = source.censusPageSweepReceipt(true, true, true,
+					() -> {
+					});
+			assertThat(receipt).as("the immutable page source provides exact census facts").isNotNull();
+			long subjectNodes;
+			long objectNodes;
+			long pageHeaders = 0L;
+			long contributions = 0L;
+			long pageRootVisits = 0L;
+			long physicalQuads = 0L;
+			int predicateCount;
+			int nonemptyPredicateCount = 0;
+			try (NativeProbe probe = source.newProbe()) {
+				NodePredicates subjects = probe.nodePredicates(true);
+				NodePredicates objects = probe.nodePredicates(false);
+				assertThat(subjects).as("the same source exposes subject projection metadata").isNotNull();
+				assertThat(objects).as("the same source exposes object projection metadata").isNotNull();
+				subjectNodes = subjects.nodeCount();
+				objectNodes = objects.nodeCount();
+				try (WildcardAdjacency predicates = probe.wildcardAdjacency(true)) {
+					assertThat(predicates).as("the complete outgoing predicate catalog is available").isNotNull();
+					predicateCount = predicates.predicateCount();
+					for (int ordinal = 0; ordinal < predicateCount; ordinal++) {
+						predicates.bind(ordinal);
+						NativeAdjacency view = probe.adjacency(predicates.predicateAt(ordinal), true);
+						assertThat(view).as("the selected outgoing plane has a real page view").isNotNull();
+						long predicatePages = 0L;
+						try (view; AdjacencyPageCursor pages = view.openPageCursor()) {
+							assertThat(pages).as("the plane has its physical page cursor").isNotNull();
+							while (pages.advance()) {
+								predicatePages++;
+								pageHeaders = Math.addExact(pageHeaders, 1L);
+								assertThat(pages.hasCommonContext())
+										.as("the query can use the one-context page header")
+										.isTrue();
+								assertThat(pages.commonContext())
+										.as("all quads in the common header are named graph rows")
+										.isNotEqualTo(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID);
+								assertThat(pages.uniformRowTermKind())
+										.as("root kinds do not require per-row payload decoding")
+										.isTrue();
+								assertThat(pages.uniformNeighborTermKind())
+										.as("object kinds do not require per-quad payload decoding")
+										.isTrue();
+								pageRootVisits = Math.addExact(pageRootVisits, pages.rowCount());
+								physicalQuads = Math.addExact(physicalQuads, pages.quadCount());
+								contributions = Math.addExact(contributions, 1L);
+							}
+						}
+						if (predicatePages > 0L) {
+							nonemptyPredicateCount++;
+						}
+					}
+				}
+			}
+			int completePredicateCount = predicateCount;
+			int completeNonemptyPredicateCount = nonemptyPredicateCount;
+			long completePageHeaders = pageHeaders;
+			long completeContributions = contributions;
+			long completePageRootVisits = pageRootVisits;
+			long completePhysicalQuads = physicalQuads;
+			assertAll("one complete header-only physical census source",
+					() -> assertThat(completePredicateCount).isEqualTo(1),
+					() -> assertThat(receipt.predicates()).isEqualTo(completePredicateCount),
+					() -> assertThat(receipt.nonemptyPredicates()).isEqualTo(completeNonemptyPredicateCount),
+					() -> assertThat(receipt.predicateSegments()).as("the base exposes exact catalog segment count G")
+							.isEqualTo(1),
+					() -> assertThat(receipt.shardDescriptors()).as("each nonempty descriptor is reported exactly")
+							.isBetween(1L, expectedPages),
+					() -> assertThat(completePageHeaders).isEqualTo(expectedPages),
+					() -> assertThat(receipt.pages()).isEqualTo(completePageHeaders),
+					() -> assertThat(receipt.shardTransitionsUpperBound())
+							.as("the source publishes its nonempty-directory transition upper bound")
+							.isLessThanOrEqualTo(completePageHeaders),
+					() -> assertThat(completeContributions).as("C is one bulk header contribution per common page")
+							.isEqualTo(completePageHeaders),
+					() -> assertThat(receipt.roots()).isEqualTo(expectedRoots),
+					() -> assertThat(completePageRootVisits).isEqualTo(expectedPageRootVisits),
+					() -> assertThat(receipt.quads()).isEqualTo(expectedQuads),
+					() -> assertThat(completePhysicalQuads).isEqualTo(expectedQuads),
+					() -> assertThat(receipt.subjectNodes()).isEqualTo(subjectNodes),
+					() -> assertThat(receipt.objectNodes()).isEqualTo(objectNodes),
+					() -> assertThat(subjectNodes).isEqualTo(expectedRoots),
+					() -> assertThat(objectNodes).isEqualTo(expectedQuads),
+					() -> assertThat(receipt.defaultContextQuads()).isZero());
+			return new HeaderOnlyGrain(completePredicateCount, completeNonemptyPredicateCount,
+					receipt.predicateSegments(), receipt.shardDescriptors(), completePageHeaders,
+					receipt.shardTransitionsUpperBound(), completeContributions, completePageRootVisits,
+					receipt.roots(), receipt.quads(), subjectNodes, objectNodes, defaultContextQuads);
+		}
+	}
+
+	private PhysicalGrain assertMixedPageEvidence(long expectedDefaultCount) throws Exception {
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			assertThat(source.hasCanonicalIds()).as("the real compacted source has canonical term identity").isTrue();
+			assertThat(source.countsContextFromMetadata(LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))
+					.as("default-context facts are authoritative on this explicit snapshot")
+					.isTrue();
+			assertThat(source.count(NativeLmdbQuerySource.UNKNOWN_ID, NativeLmdbQuerySource.UNKNOWN_ID,
+					NativeLmdbQuerySource.UNKNOWN_ID, LmdbNativeAggregateCompiler.NULL_CONTEXT_ID))
+							.as("the source's default count is exact for GRAPH ?g coverage")
+							.isEqualTo(expectedDefaultCount);
+			NativeLmdbQuerySource.CensusPageSweepReceipt receipt = source.censusPageSweepReceipt(true, true, true,
+					() -> {
+					});
+			assertThat(receipt).as("the immutable source provides the census cardinality facts").isNotNull();
+			assertThat(receipt.bySubject()).isTrue();
+			assertThat(receipt.defaultContextQuads()).isEqualTo(expectedDefaultCount);
+			int mixedPages = 0;
+			int commonPagesWithUnpricedKinds = 0;
+			boolean onePageHasBothNamedGraphs = false;
+			long headers = 0L, contextPrefixReads = 0L, contextPrefixValidationReads = 0L;
+			int mixedPagesWithPrefix = 0;
+			long contributions = 0L;
+			long physicalQuads = 0L;
+			long pageRootVisits = 0L;
+			int predicateCount;
+			try (NativeProbe probe = source.newProbe(); WildcardAdjacency predicates = probe.wildcardAdjacency(true)) {
+				assertThat(predicates).as("the source exposes its complete real predicate plane").isNotNull();
+				predicateCount = predicates.predicateCount();
+				assertThat(predicateCount).as("the compared snapshots retain the same single predicate")
+						.isEqualTo(1);
+				for (int ordinal = 0; ordinal < predicates.predicateCount(); ordinal++) {
+					long predicate = predicates.predicateAt(ordinal);
+					predicates.bind(ordinal);
+					NativeAdjacency view = probe.adjacency(predicate, true);
+					assertThat(view).as("the real outgoing predicate plane has a page view").isNotNull();
+					try (view; AdjacencyPageCursor pages = view.openPageCursor()) {
+						assertThat(pages).as("the physical predicate plane exposes real page headers").isNotNull();
+						while (pages.advance()) {
+							headers = Math.addExact(headers, 1L);
+							pageRootVisits = Math.addExact(pageRootVisits, pages.rowCount());
+							long pageQuads = pages.quadCount();
+							physicalQuads = Math.addExact(physicalQuads, pageQuads);
+							if (pages.hasCommonContext()) {
+								contributions = Math.addExact(contributions, 1L);
+								if (!pages.uniformRowTermKind() || !pages.uniformNeighborTermKind()) {
+									commonPagesWithUnpricedKinds++;
+								}
+								continue;
+							}
+							mixedPages++;
+							contributions = Math.addExact(contributions, pageQuads);
+							int rows = pages.rowCount();
+							int fibers = pages.fiberCount();
+							int lastRowFibers = pages.rowFiberCount(rows - 1);
+							assertThat(pageQuads)
+									.as("paired graph contexts create repeated contexts within real fibers")
+									.isGreaterThan((long) fibers);
+							long pagePrefixReads = Math.subtractExact((long) fibers, lastRowFibers);
+							contextPrefixReads = Math.addExact(contextPrefixReads, pagePrefixReads);
+							if (pagePrefixReads > 0L) {
+								mixedPagesWithPrefix++;
+								contextPrefixValidationReads++;
+							}
+							Set<Long> contextsOnThisPage = new HashSet<>();
+							for (int row = 0; row < rows; row++) {
+								int quads = Math.toIntExact(pages.rowQuadCount(row));
+								long[] neighbors = new long[quads];
+								long[] contexts = new long[quads];
+								assertThat(pages.copyRowQuads(row, 0, quads, neighbors, contexts))
+										.as("the actual page payload supplies every row quad and context")
+										.isEqualTo(quads);
+								for (long context : contexts) {
+									if (context != LmdbNativeAggregateCompiler.NULL_CONTEXT_ID) {
+										contextsOnThisPage.add(context);
+									}
+								}
+							}
+							onePageHasBothNamedGraphs |= contextsOnThisPage.size() > 1;
+						}
+					}
+				}
+			}
+			assertThat(mixedPages).as("paired graph contexts produce real mixed-context physical pages")
+					.isPositive();
+			assertThat(contextPrefixReads).as("the real mixed-page header facts imply preceding context-count reads")
+					.isPositive();
+			assertThat(onePageHasBothNamedGraphs)
+					.as("one actual physical page contains both named context IDs in its copied quad payload")
+					.isTrue();
+			assertThat(commonPagesWithUnpricedKinds)
+					.as("the fixture does not silently require unsupported common-page fiber decoding")
+					.isZero();
+			assertThat(headers).as("real cursor headers match the immutable receipt page fact")
+					.isEqualTo(receipt.pages());
+			assertThat(physicalQuads).as("real copied page quads match the immutable receipt quad fact")
+					.isEqualTo(receipt.quads());
+			return new PhysicalGrain(headers, contributions, physicalQuads, pageRootVisits, predicateCount,
+					receipt.roots(), contextPrefixReads, mixedPagesWithPrefix, contextPrefixValidationReads,
+					receipt.nonemptyPredicates(), receipt.shardDescriptors());
+		}
+	}
+
+	@Test
+	void continuedRootPageVisitsRemainDistinctFromLogicalReceiptRoots() throws Exception {
+		populateContinuedRootFixture();
+		long logicalRoots;
+		long pageRootVisits = 0L;
+		long pageHeaders = 0L;
+		Set<Long> rootsSeen = new HashSet<>();
+		boolean repeatedRootOnLaterPage = false;
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			var receipt = source.censusPageSweepReceipt(true, true, true, () -> {
+			});
+			assertThat(receipt).as("the compacted complete source returns a same-view page receipt").isNotNull();
+			logicalRoots = receipt.roots();
+			try (NativeProbe probe = source.newProbe(); WildcardAdjacency predicates = probe.wildcardAdjacency(true)) {
+				assertThat(predicates).isNotNull();
+				for (int predicateIndex = 0; predicateIndex < predicates.predicateCount(); predicateIndex++) {
+					predicates.bind(predicateIndex);
+					NativeAdjacency view = probe.adjacency(predicates.predicateAt(predicateIndex), true);
+					try (view; AdjacencyPageCursor pages = view.openPageCursor()) {
+						while (pages.advance()) {
+							pageHeaders++;
+							int rowCount = pages.rowCount();
+							pageRootVisits = Math.addExact(pageRootVisits, rowCount);
+							long[] pageRoots = new long[rowCount];
+							long[] pageQuadCounts = new long[rowCount];
+							assertThat(pages.copyRootCounts(0, rowCount, pageRoots, 0, pageQuadCounts, 0))
+									.isEqualTo(rowCount);
+							for (long root : pageRoots) {
+								repeatedRootOnLaterPage |= !rootsSeen.add(root);
+							}
+						}
+					}
+				}
+			}
+		}
+		assertThat(logicalRoots).as("the source fact is one logical root").isEqualTo(1L);
+		assertThat(pageHeaders).as("the one root continues into multiple physical pages").isGreaterThan(1L);
+		assertThat(pageRootVisits).as("page-local root visits include continuation copies").isGreaterThan(logicalRoots);
+		assertThat(repeatedRootOnLaterPage).as("the same actual root ID is present on more than one page").isTrue();
+		assertThat(rootsSeen).hasSize(1);
+
+		UnforcedGroupRun run = evaluateUnforcedGroup(CENSUS);
+		assertThat(run.actual()).containsExactlyInAnyOrderElementsOf(run.expected());
+		LmdbNativeDecisionRecord.Entry census = censusEntry(run.decision());
+		assertThat(census.priceable())
+				.as("logical receipt roots R must not be compared to repeated page visits T: %s",
+						run.decision().describe("GROUP"))
+				.isTrue();
+	}
+
+	private void populateContinuedRootFixture() {
+		try (SailRepositoryConnection connection = repository.getConnection()) {
+			ValueFactory vf = connection.getValueFactory();
+			IRI subject = vf.createIRI(EX + "continued-root");
+			IRI predicate = vf.createIRI(EX + "continued-predicate");
+			IRI graph = vf.createIRI(EX + "continued-graph");
+			connection.begin();
+			connection.clear();
+			for (int index = 0; index < 20_000; index++) {
+				connection.add(subject, predicate, vf.createIRI(EX + "continued-object-" + index), graph);
+			}
+			connection.commit();
+		}
+		assertThat(AdjacencyEngagementTestAccess.buildNow(store)).isTrue();
+	}
+
+	@Test
+	void receiptKeepsSubjectProjectionCountIndependentOfSelectedPlaneDirection() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource source = (NativeLmdbQuerySource) dataset;
+			var receipt = source.censusPageSweepReceipt(false, true, true, () -> {
+			});
+			assertThat(receipt).as("the real complete incoming plane supplies a census receipt").isNotNull();
+			long subjectNodes;
+			long objectNodes;
+			try (NativeProbe probe = source.newProbe()) {
+				subjectNodes = probe.nodePredicates(true).nodeCount();
+				objectNodes = probe.nodePredicates(false).nodeCount();
+			}
+			assertThat(subjectNodes).isNotEqualTo(objectNodes);
+			assertAll("node projection facts keep their subject/object meanings across plane direction",
+					() -> assertThat(receipt.subjectNodes()).isEqualTo(subjectNodes),
+					() -> assertThat(receipt.objectNodes()).isEqualTo(objectNodes));
+		}
+	}
+
+	@Test
+	void rawSourceWithoutQueryScopeRemainsUnpricedAndFallsBack() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		String wideQuery = CENSUS.replace("SUM(IF(isIRI(?o), 1, 0))",
+				"SUM(IF(isIRI(?o), " + BigInteger.ONE.shiftLeft(4096) + ", 0))");
+		String previousNative = System.getProperty(NATIVE);
+		String scanAggregates = "rdf4j.lmdb.directAdjacency.scanAggregates.enabled";
+		String previousScanAggregates = System.getProperty(scanAggregates);
+		System.setProperty(NATIVE, "false");
+		System.setProperty(scanAggregates, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(wideQuery);
+		} finally {
+			restoreProperty(NATIVE, previousNative);
+			restoreProperty(scanAggregates, previousScanAggregates);
+		}
+
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, wideQuery, null).getTupleExpr();
+		Group group = group(root);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			AtomicInteger probeOpens = new AtomicInteger();
+			doAnswer(call -> {
+				probeOpens.incrementAndGet();
+				return backing.newProbe();
+			}).when(source).newProbe();
+
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
+			Group physicalGroup = group(physical.expression());
+			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, source, strategy, context,
+							physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(candidate).as("the generic group candidate remains available").isNotNull();
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+			layout.freeze(List.of("s", "p", "o", "g"));
+			RowState row = new RowState(source, layout, EmptyBindingSet.getInstance());
+			LmdbQueryMemoryManager.QueryLedger preparedLedger = row.memoryScope
+					.ledger(LmdbNativeHashJoin.queryMemory());
+			NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+			assertThat(prepared).isNotNull();
+			boolean rawQuoteUnavailable = prepared.quote(row) == null;
+			int probesBeforeAttempt = probeOpens.get();
+			boolean nativeAttemptDeclined;
+			try (var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+				nativeAttemptDeclined = result == null;
+			}
+			int probesOpenedForUnscopedAttempt = probeOpens.get() - probesBeforeAttempt;
+
+			List<BindingSet> actual = new ArrayList<>();
+			System.setProperty(NATIVE, "false");
+			System.setProperty(scanAggregates, "false");
+			try (var result = candidate.evaluate(EmptyBindingSet.getInstance())) {
+				while (result.hasNext()) {
+					actual.add(result.next());
+				}
+			} finally {
+				restoreProperty(NATIVE, previousNative);
+				restoreProperty(scanAggregates, previousScanAggregates);
+			}
+			long ledgerBytesAfterFallback = preparedLedger.usedBytes();
+			row.memoryScope.close();
+
+			assertAll("a contextless raw source cannot certify the prepared census runtime",
+					() -> assertThat(rawQuoteUnavailable)
+							.as("the raw-source candidate has no query-scope-bound complete quote")
+							.isTrue(),
+					() -> assertThat(nativeAttemptDeclined)
+							.as("the unsupported native attempt declines before execution")
+							.isTrue(),
+					() -> assertThat(probesOpenedForUnscopedAttempt)
+							.as("the unsupported attempt opens no native probe")
+							.isZero(),
+					() -> assertThat(actual).as("ordinary fallback preserves the full native-disabled RDF bag")
+							.containsExactlyInAnyOrderElementsOf(expected),
+					() -> assertThat(ledgerBytesAfterFallback)
+							.as("generic fallback leaves the prepared row ledger unchanged")
+							.isZero());
+		}
+	}
+
+	@Test
+	void matchingSyntheticScopeInternsComputedValuesOnPreparedLedger() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		String wideQuery = CENSUS.replace("SUM(IF(isIRI(?o), 1, 0))",
+				"SUM(IF(isIRI(?o), " + BigInteger.ONE.shiftLeft(4096) + ", 0))");
+		String previousNative = System.getProperty(NATIVE);
+		System.setProperty(NATIVE, "false");
+		List<BindingSet> expected;
+		try {
+			expected = rows(wideQuery);
+		} finally {
+			restoreProperty(NATIVE, previousNative);
+		}
+
+		TupleExpr root = QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, wideQuery, null).getTupleExpr();
+		Group group = group(root);
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			AtomicBoolean executing = new AtomicBoolean();
+			AtomicInteger dictionaryLookups = new AtomicInteger();
+			AtomicInteger probeOpens = new AtomicInteger();
+			AtomicReference<LmdbQueryMemoryManager.QueryLedger> internLedger = new AtomicReference<>();
+			doAnswer(call -> {
+				probeOpens.incrementAndGet();
+				return backing.newProbe();
+			}).when(source).newProbe();
+			doAnswer(call -> {
+				if (executing.get()) {
+					dictionaryLookups.incrementAndGet();
+					internLedger.set(SyntheticValueSource.forEvaluation(source).executionContext().memoryLedger());
+				}
+				return backing.idOf(call.getArgument(0), call.getArgument(1));
+			}).when(source).idOf(any(Value.class), anyInt());
+
+			SyntheticValueSource scopedSource = SyntheticValueSource.forEvaluation(source);
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
+			Group physicalGroup = group(physical.expression());
+			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, scopedSource, strategy, context,
+							physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(candidate).as("the matching synthetic source offers the complete page receipt").isNotNull();
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+			layout.freeze(List.of("s", "p", "o", "g"));
+			RowState row = new RowState(scopedSource, layout, EmptyBindingSet.getInstance());
+			LmdbQueryMemoryManager.QueryLedger preparedLedger = row.memoryScope
+					.ledger(LmdbNativeHashJoin.queryMemory());
+			NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+			assertThat(prepared).isNotNull();
+			assertThat(prepared.quote(row)).as("the matching row scope receives a complete quote").isNotNull();
+
+			SyntheticValueSource mismatchedInvocation = SyntheticValueSource.forEvaluation(source);
+			LmdbNativeQueryMemoryScope originalScope = row.memoryScope;
+			row.memoryScope = mismatchedInvocation.executionContext().memoryScope();
+			boolean changedRowScopeRejected = prepared.quote(row) == null;
+			row.memoryScope = originalScope;
+
+			long rowLedgerBytesBeforeMismatch = preparedLedger.usedBytes();
+			int probesBeforeMismatch = probeOpens.get();
+			boolean mismatchDeclined;
+			try (SyntheticValueSource.EvaluationScope ignored = SyntheticValueSource
+					.attachEvaluation(mismatchedInvocation);
+					var result = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+				mismatchDeclined = result == null;
+			}
+			int probesOpenedForMismatch = probeOpens.get() - probesBeforeMismatch;
+
+			List<BindingSet> actual = new ArrayList<>();
+			List<BindingSet> retry = new ArrayList<>();
+			long ledgerBytesAfterFirstInvocationClose;
+			long ledgerBytesAfterRetryClose;
+			executing.set(true);
+			try {
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(results).as("the matching synthetic scope evaluates the complete result").isNotNull();
+					assertThat(results.hasNext()).as("the full census result is ready before iteration closes")
+							.isTrue();
+					actual.add(results.next());
+					assertThat(internLedger.get())
+							.as("the wide SUM result reaches the active runtime interner")
+							.isNotNull();
+					assertThat(internLedger.get().usedBytes())
+							.as("the computed integer remains charged while its result is open")
+							.isPositive();
+					while (results.hasNext()) {
+						actual.add(results.next());
+					}
+				}
+				ledgerBytesAfterFirstInvocationClose = preparedLedger.usedBytes();
+				internLedger.set(null);
+				try (var results = prepared.evaluate(EmptyBindingSet.getInstance(), row.cancellation)) {
+					assertThat(results).as("the same prepared recipe remains retryable").isNotNull();
+					assertThat(results.hasNext()).as("the retried result is ready").isTrue();
+					retry.add(results.next());
+					assertThat(preparedLedger.usedBytes())
+							.as("the retry retains real computed values until its result closes")
+							.isPositive();
+					while (results.hasNext()) {
+						retry.add(results.next());
+					}
+				}
+				ledgerBytesAfterRetryClose = preparedLedger.usedBytes();
+			} finally {
+				executing.set(false);
+				mismatchedInvocation.executionContext().close();
+				scopedSource.executionContext().close();
+			}
+			assertAll("the certified census invocation shares the prepared row's exact scope",
+					() -> assertThat(changedRowScopeRejected)
+							.as("the quote rejects a different row memory-scope identity")
+							.isTrue(),
+					() -> assertThat(mismatchDeclined)
+							.as("an active invocation with a different scope declines")
+							.isTrue(),
+					() -> assertThat(probesOpenedForMismatch)
+							.as("an active scope mismatch is rejected before native probe open")
+							.isZero(),
+					() -> assertThat(preparedLedger.usedBytes())
+							.as("a mismatched invocation leaves the prepared ledger unchanged")
+							.isEqualTo(rowLedgerBytesBeforeMismatch),
+					() -> assertThat(actual).containsExactlyInAnyOrderElementsOf(expected),
+					() -> assertThat(retry).containsExactlyInAnyOrderElementsOf(expected),
+					() -> assertThat(dictionaryLookups.get()).as("a real computed aggregate value reaches store idOf")
+							.isPositive(),
+					() -> assertThat(internLedger.get())
+							.as("computed-value interning uses the captured prepared-row ledger")
+							.isSameAs(preparedLedger),
+					() -> assertThat(ledgerBytesAfterFirstInvocationClose)
+							.as("query-scoped values remain owned until the synthetic query scope closes")
+							.isPositive(),
+					() -> assertThat(ledgerBytesAfterRetryClose)
+							.as("reused query-scoped values remain charged through a later invocation")
+							.isPositive(),
+					() -> assertThat(preparedLedger.usedBytes())
+							.as("closing the owning synthetic query scope releases its runtime table")
+							.isZero());
+		}
+	}
+
+	@Test
+	void attachedSyntheticScopeMismatchRemainsUnpricedBeforeProbe() throws Exception {
+		populateMixedNamedGraphFixture(false);
+		Group group = group(QueryParserUtil.parseTupleQuery(QueryLanguage.SPARQL, CENSUS, null).getTupleExpr());
+		try (var dataset = NativeQuerySourceAccess.openExplicitDataset(store)) {
+			NativeLmdbQuerySource backing = (NativeLmdbQuerySource) dataset;
+			NativeLmdbQuerySource source = mock(NativeLmdbQuerySource.class, delegatesTo(backing));
+			AtomicInteger probeOpens = new AtomicInteger();
+			doAnswer(call -> {
+				probeOpens.incrementAndGet();
+				return backing.newProbe();
+			}).when(source).newProbe();
+
+			SyntheticValueSource attachedSource = SyntheticValueSource.forEvaluation(source);
+			SyntheticValueSource differentScope = SyntheticValueSource.forEvaluation(source);
+			var triples = new SailDatasetTripleTermSource(repository.getValueFactory(), dataset);
+			LmdbNativeEvaluationStrategy strategy = new LmdbNativeEvaluationStrategy(triples, null, null, 0L,
+					new EvaluationStatistics(), false);
+			QueryEvaluationContext context = new QueryEvaluationContext.Minimal((Dataset) null);
+			NativeGraphFusion.Prepared physical = NativeGraphFusion.prepare(group, context, strategy);
+			Group physicalGroup = group(physical.expression());
+			QueryEvaluationStep candidate = strategy.withValuePositions(physical.positions(),
+					() -> LmdbNativeCensusAggregate.tryCreate(physicalGroup, attachedSource, strategy, context,
+							physical.expression(), pattern -> ContextConstraint.UNRESTRICTED));
+			assertThat(candidate).isNotNull();
+			NativeSlotLayout layout = new NativeSlotLayout(Map.of("s", 0, "p", 1, "o", 2, "g", 3), null);
+			layout.freeze(List.of("s", "p", "o", "g"));
+			RowState row = new RowState(attachedSource, layout, EmptyBindingSet.getInstance());
+			row.memoryScope = differentScope.executionContext().memoryScope();
+			NativeAggregateAlternative.Prepared prepared = ((NativeAggregateAlternative) candidate).prepare(row);
+
+			assertAll("an attached synthetic source cannot certify a different row scope",
+					() -> assertThat(prepared.quote(row)).isNull(),
+					() -> assertThat(probeOpens.get())
+							.as("scope mismatch is rejected before opening a native probe")
+							.isZero());
+			differentScope.executionContext().close();
+			attachedSource.executionContext().close();
+		}
+	}
+
+	private static void restoreProperty(String name, String value) {
+		if (value == null) {
+			System.clearProperty(name);
+		} else {
+			System.setProperty(name, value);
+		}
+	}
+
+	private UnforcedGroupRun evaluateUnforcedGroup(String query) {
+		List<BindingSet> expected;
+		System.setProperty(NATIVE, "false");
+		try {
+			expected = rows(query);
+		} finally {
+			System.setProperty(NATIVE, "true");
+		}
+		List<LmdbNativeDecisionRecord> decisions = new ArrayList<>();
+		List<String> selected = new ArrayList<>();
+		LmdbNativeDispatchLoop.observeDecisions((record, label) -> {
+			if (record.point() == LmdbNativeDecisionPoint.GROUP) {
+				decisions.add(record);
+			}
+		});
+		LmdbNativeDispatchLoop.observeSelections((target, label, id, record) -> {
+			if (target instanceof Group && record.point() == LmdbNativeDecisionPoint.GROUP) {
+				selected.add(id);
+			}
+		});
+		List<BindingSet> actual;
+		try {
+			try (SailRepositoryConnection connection = repository.getConnection()) {
+				actual = rows(connection, query, false);
+			}
+		} finally {
+			LmdbNativeDispatchLoop.observeSelections(null);
+			LmdbNativeDispatchLoop.observeDecisions(null);
+		}
+		assertThat(actual).as("native execution preserves every RDF binding from the native-disabled bag")
+				.containsExactlyInAnyOrderElementsOf(expected);
+		assertThat(decisions).as("the public query reaches the exact same GROUP competition").hasSize(1);
+		LmdbNativeDecisionRecord decision = decisions.getFirst();
+		assertThat(selected).as("the public query records its successful GROUP opener").hasSize(1);
+		assertThat(selected.getFirst()).as("the successful opener agrees with this same GROUP winner")
+				.isEqualTo(decision.winnerId());
+		return new UnforcedGroupRun(expected, actual, decision, selected.getFirst());
+	}
+
+	private static LmdbNativeDecisionRecord.Entry censusEntry(LmdbNativeDecisionRecord decision) {
+		return decision.entries()
+				.stream()
+				.filter(entry -> entry.id().equals(LmdbNativeCensusAggregate.PATH))
+				.findFirst()
+				.orElseThrow(() -> new AssertionError(decision.describe("GROUP")));
+	}
+
+	private static void assertCensusRemainsUnpriced(LmdbNativeDecisionRecord decision) {
+		LmdbNativeDecisionRecord.Entry census = censusEntry(decision);
+		assertThat(census.admitted()).as(decision.describe("GROUP")).isTrue();
+		assertThat(census.priceable()).as("unproved census scope stays unknown: %s", decision.describe("GROUP"))
+				.isFalse();
+		assertThat(census.missingPhysicalWork()).as("the partial quote retains its missing proof reason")
+				.isNotBlank();
 	}
 
 	@ParameterizedTest

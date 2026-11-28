@@ -485,15 +485,22 @@ public final class KernelRuntime {
 	}
 
 	/**
-	 * Poll site emitted inside generated kernel loops (and mirrored by the interpreter): throws the stackless
-	 * {@link KernelCancelledException} when a probe deadline has fired. A {@code null} cancellation — every normal,
-	 * non-probe execution — costs one branch.
+	 * Performs a full cancellation checkpoint, including query ownership, interrupts, and an optional probe deadline.
+	 * Call at execution boundaries or from a bounded work-stride poll, not for every buffered row or fiber. Ordinary
+	 * execution also carries a query cancellation token; only callers with no cancellation sources pass {@code null}.
 	 */
 	public static void checkCancelled(KernelCancellation cancellation) {
 		if (cancellation == null) {
 			return;
 		}
 		int cancellationReason = cancellation.cancellationReason();
+		if (cancellationReason != KernelCancellation.NOT_CANCELLED) {
+			throwCancellation(cancellation, cancellationReason);
+		}
+	}
+
+	/** Keeps exception selection off the successful checkpoint path. */
+	private static void throwCancellation(KernelCancellation cancellation, int cancellationReason) {
 		if (cancellationReason == KernelCancellation.QUERY_CANCELLED) {
 			throw cancellation.queryCancellationException();
 		}
@@ -515,15 +522,20 @@ public final class KernelRuntime {
 	 * output array. The probe has not published any row at this point, so this remains a replay-safe strategy decline.
 	 */
 	public static void checkMaterializationCapacity(KernelCancellation cancellation, int bufferedRows) {
-		// A blocking kernel may grow its private result array much faster than an enclosing query thread can regain
-		// control. Poll the shared cancellation first on every append, including ordinary (non-probe) execution, so a
-		// timeout or a cancelled worker group unwinds before the next allocation. The masked loop polls remain useful
-		// for pipelines that produce few or no rows.
-		checkCancelled(cancellation);
-		if (cancellation == null || cancellation.materializationRowLimit() < 0
-				|| bufferedRows < cancellation.materializationRowLimit()) {
+		if (cancellation == null) {
 			return;
 		}
+		int rowLimit = cancellation.materializationRowLimit();
+		if (rowLimit < 0 || bufferedRows < rowLimit) {
+			// Cancellation is cooperative. The existing row count gives a checkpoint at entry and every 1024
+			// appends without another counter or a supplier/clock read on each row. Operators with no output,
+			// repeated groups, or a saturated row count retain their independent work-stride polls.
+			if ((bufferedRows & 1023) == 0) {
+				checkCancelled(cancellation);
+			}
+			return;
+		}
+		// The capacity ceiling is exact. Its full checkpoint preserves query/peer priority and capacity attribution.
 		int reason = cancellation.cancellationReasonAtMaterializationLimit();
 		if (reason == KernelCancellation.QUERY_CANCELLED) {
 			throw cancellation.queryCancellationException();

@@ -459,9 +459,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			int capacity = materializedCapacity(cachedCount);
 			neighborBuf = new long[capacity];
 		}
-		int copied = LmdbAdjacencyRunCodec.copy(contexts, runCursor, 0, cachedCount, neighborBuf, 0, null, 0);
-		if (copied != cachedCount) {
-			throw new IllegalStateException("neighbor decode returned " + copied + " of " + cachedCount + " edges");
+		if (cachedCount == 1) {
+			// Keep the normal cache while avoiding bulk-decoder setup for a single edge.
+			neighborBuf[0] = LmdbAdjacencyRunCodec.neighborAt(runCursor, 0);
+		} else {
+			int copied = LmdbAdjacencyRunCodec.copy(contexts, runCursor, 0, cachedCount, neighborBuf, 0, null, 0);
+			if (copied != cachedCount) {
+				throw new IllegalStateException("neighbor decode returned " + copied + " of " + cachedCount + " edges");
+			}
 		}
 		neighborsMaterialized = true;
 		// The full run was genuinely decoded and consumed by this view. Count that work once, not once per later
@@ -698,6 +703,20 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
+	public long lowerBoundKeyOrdinal(long key, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+		ensureOpen();
+		return !baseOnly || baseKeys == null ? -1L : baseKeys.lowerBoundOrdinal(key, cancellationPoll);
+	}
+
+	@Override
+	public boolean orderedKeyRunsWithBoundedOpen() {
+		// Overlay key-domain preparation can scan and sort all changed rows before a cursor can install a
+		// cancellation callback. The immutable base requires only a constant-time setup.
+		return baseOnly;
+	}
+
+	@Override
 	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor() {
 		return rootScanCursor(0, keyCount());
 	}
@@ -712,9 +731,21 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	}
 
 	@Override
+	public DirectPageCursor openPageCursor(Runnable cancellationPoll) {
+		ensureOpen();
+		return !baseOnly || baseKeys == null ? null : new DirectPageCursor(baseKeys.pageCursor(cancellationPoll));
+	}
+
+	@Override
 	public long pageCount() {
 		ensureOpen();
 		return baseOnly && baseKeys != null ? baseKeys.pageCount() : -1L;
+	}
+
+	@Override
+	public long pageCount(Runnable cancellationPoll) {
+		ensureOpen();
+		return baseOnly && baseKeys != null ? baseKeys.pageCount(cancellationPoll) : -1L;
 	}
 
 	@Override
@@ -740,6 +771,23 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 					"invalid key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
 		}
 		return rootScanCursor(fromOrdinal, toOrdinal);
+	}
+
+	@Override
+	public NativeLmdbQuerySource.NativeAdjacency.KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal,
+			Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+		ensureOpen();
+		if (!baseOnly || baseKeys == null) {
+			return null;
+		}
+		long count = baseKeys.keyCount();
+		if (fromOrdinal < 0 || toOrdinal < fromOrdinal || toOrdinal > count) {
+			throw new IllegalArgumentException(
+					"invalid key-run window: [" + fromOrdinal + ", " + toOrdinal + ") of " + count);
+		}
+		return new RootScanCursor(baseKeys.cursor(fromOrdinal, toOrdinal, cancellationPoll),
+				fromOrdinal, toOrdinal, false, -1L, cancellationPoll);
 	}
 
 	RootScanCursor rootScanCursor() {
@@ -995,9 +1043,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		private long key;
 		private long run;
 		private long size = SIZE_UNKNOWN;
-		private final Runnable cancellationPoll;
 		private long contextSpanEnd;
 		private boolean directBaseRun;
+		private Runnable cancellationPoll;
 
 		private RootScanCursor(ImmutablePagedQuadCsfIndex.KeyCursor baseCursor, long fromOrdinal, long toOrdinal,
 				boolean merged, long boundContext, Runnable cancellationPoll) {
@@ -1012,6 +1060,14 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 			this.boundContext = boundContext;
 			this.contextRun = boundContext < 0 ? null : new LmdbAdjacencyRunCodec.RunCursor(cancellationPoll);
 			this.emittedOrdinal = merged ? 0 : fromOrdinal;
+		}
+
+		@Override
+		public void cancellationPoll(Runnable cancellationPoll) {
+			this.cancellationPoll = cancellationPoll;
+			if (baseCursor != null) {
+				baseCursor.cancellationPoll(cancellationPoll);
+			}
 		}
 
 		@Override
@@ -1049,6 +1105,9 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		@Override
 		public boolean advance() {
 			while (emittedOrdinal < toOrdinal && nextCandidate()) {
+				if (cancellationPoll != null) {
+					cancellationPoll.run();
+				}
 				long ordinal = emittedOrdinal++;
 				if (ordinal >= fromOrdinal && run > 0) {
 					if (contextRun != null) {
@@ -1283,6 +1342,12 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 		}
 
 		@Override
+		public boolean supportsPhysicalFiberCopy() {
+			// A multi-page equal-neighbor fiber may otherwise walk its entire extent chain before returning.
+			return directBaseRun && baseCursor.singlePageRow();
+		}
+
+		@Override
 		public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
 				long[] multiplicityTarget, int multiplicityOffset) {
 			if (!directBaseRun) {
@@ -1323,14 +1388,15 @@ final class LmdbDirectNativeAdjacency implements NativeLmdbQuerySource.NativeAdj
 	@Override
 	public long lowerBound(long runHandle, long fromOffset, long neighbor, long context) {
 		long rawContext = Math.max(0, context);
-		if (materializeNeighbors(runHandle) && materializeContexts(runHandle)) {
+		// Every unsigned context is at least zero; neighbor-only seeks need no context-column decode.
+		if (materializeNeighbors(runHandle) && (rawContext == 0L || materializeContexts(runHandle))) {
 			long low = Math.max(0, fromOffset);
 			long high = cachedCount;
 			while (low < high) {
 				long mid = (low + high) >>> 1;
 				int at = (int) mid;
 				int cmp = Long.compareUnsigned(neighborBuf[at], neighbor);
-				if (cmp == 0) {
+				if (cmp == 0 && rawContext != 0L) {
 					cmp = Long.compareUnsigned(contextBuf[at], rawContext);
 				}
 				if (cmp < 0) {

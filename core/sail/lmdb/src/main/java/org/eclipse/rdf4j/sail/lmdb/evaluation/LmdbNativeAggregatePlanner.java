@@ -22,11 +22,14 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.BiFunction;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -90,6 +93,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.MinusQuer
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.OrderedEvaluation;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.evaluationsteps.TupleFunctionGroupQueryEvaluationStep;
 import org.eclipse.rdf4j.query.algebra.evaluation.iterator.ScopedLeftJoinIterator.GraphFrameMapping;
+import org.eclipse.rdf4j.query.algebra.evaluation.optimizer.GraphScopeOptimizer;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.helpers.AbstractQueryModelVisitor;
 import org.eclipse.rdf4j.query.algebra.helpers.FilterBindingScope;
@@ -159,11 +163,15 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			}
 			NativeGroupStep nativeGroupStep = (NativeGroupStep) groupStep;
 			return new NativeHavingStep(groupStep,
-					bindings -> nativeGroupStep.evaluateWithScopedHaving(bindings, descriptor));
+					bindings -> nativeGroupStep.evaluateWithScopedHaving(bindings, descriptor), null);
+		}
+		if (requiresPhysicalResults(groupStep)) {
+			return null;
 		}
 		Predicate<BindingSet> predicate = strategy.precompile(filter.getCondition(), context).asPredicate();
 		return new NativeHavingStep(groupStep,
-				bindings -> new FilteringIteration(groupStep.evaluate(bindings), predicate));
+				bindings -> new FilteringIteration(groupStep.evaluate(bindings), predicate),
+				rows -> new FilteringIteration(rows, predicate));
 	}
 
 	QueryEvaluationStep compile(Group group) {
@@ -221,6 +229,9 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 			if (arg == null) {
 				return null;
 			}
+			if (requiresPhysicalResults(arg.step)) {
+				return null;
+			}
 			if (!FilterBindingScope.allowsAllConditionBindings(filter)) {
 				return new AggregateRootStack(projectedFilterStep(arg.step, filter), arg.group);
 			}
@@ -235,12 +246,14 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 						strategy,
 						descriptor.pinnedExpr(), context);
 				QueryEvaluationStep step = new NativeHavingStep(arg.step,
-						bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator));
+						bindings -> new FilteringIteration(arg.step.evaluate(bindings), evaluator),
+						rows -> new FilteringIteration(rows, evaluator));
 				return new AggregateRootStack(step, arg.group);
 			}
 			Predicate<BindingSet> predicate = descriptor.precompileValue(strategy, context).asPredicate();
 			QueryEvaluationStep step = new NativeHavingStep(arg.step,
-					bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate));
+					bindings -> new FilteringIteration(arg.step.evaluate(bindings), predicate),
+					rows -> new FilteringIteration(rows, predicate));
 			return new AggregateRootStack(step, arg.group);
 		}
 		if (node instanceof Order order) {
@@ -257,12 +270,37 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	private record AggregateRootStack(QueryEvaluationStep step, Group group) {
 	}
 
+	private static boolean requiresPhysicalResults(QueryEvaluationStep step) {
+		return step instanceof NativeResultStep nativeStep && nativeStep.requiresPhysicalResults();
+	}
+
 	/** HAVING changes the row observer, while the same native child still owns its physical alternatives. */
-	private record NativeHavingStep(QueryEvaluationStep arg, QueryEvaluationStep evaluator)
-			implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private record NativeHavingStep(QueryEvaluationStep arg, QueryEvaluationStep evaluator,
+			UnaryOperator<CloseableIteration<BindingSet>> relationModifier)
+			implements NativeResultStep, LmdbNativePhysicalPlan {
 		@Override
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			return evaluator.evaluate(bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			if (relationModifier == null) {
+				// Evaluation-scoped HAVING owns a query context shared with its group. Keep that exact ordinary path
+				// until the group can transfer the context together with its physical relation.
+				return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+			}
+			return NativeRootPipeline.relation(arg, bindings, relationModifier);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return LmdbNativeAggregatePlanner.requiresPhysicalResults(arg);
 		}
 
 		@Override
@@ -279,13 +317,17 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 	}
 
 	private QueryEvaluationStep projectedFilterStep(QueryEvaluationStep argument, Filter filter) {
+		if (requiresPhysicalResults(argument)) {
+			return null;
+		}
 		var scope = FilterBindingScope.resolve(filter);
 		GenericSubplanDescriptor descriptor = GenericSubplanDescriptor.create(filter.getCondition(), strategy);
 		requiresExecutionContext |= !descriptor.shareableAcrossEvaluations();
 		NativeBindingSetValueEvaluator projected = compileProjectedValue(strategy, descriptor.pinnedExpr(), context,
 				scope);
 		return new NativeHavingStep(argument,
-				bindings -> new FilteringIteration(argument.evaluate(bindings), projected));
+				bindings -> new FilteringIteration(argument.evaluate(bindings), projected),
+				rows -> new FilteringIteration(rows, projected));
 	}
 
 	/** Compiles a root MultiProjection over any tuple argument admitted by the semantic native row floor. */
@@ -575,7 +617,7 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 				// projection — supportedOrder still declines expression keys at the above-projection peel sites,
 				// where names would need alias remapping inside the expression.
 				String hidden = "#orderKey" + i;
-				pendingAggregateExpressions.add(new PendingAggregateExpression(slot(hidden), orderExpr));
+				pendingAggregateExpressions.add(new PendingAggregateExpression(hidden, slot(hidden), orderExpr));
 				orderSourceNames[i] = hidden;
 				required.addAll(VarNameCollector.process(orderExpr));
 			}
@@ -2547,9 +2589,189 @@ final class LmdbNativeAggregatePlanner extends LmdbNativeAggregateFilterCompiler
 								recipeLateralFrames, recipeDeclaredInputs));
 			};
 		}
+		NativeSubqueryPlan.Incidence incidence = frames.length == 0 && privateParameters.isEmpty()
+				&& declaredLateralInputs.isEmpty() && prepared.lateralStepFactory() == null
+						? compileDistinctIncidence(expr, boundary)
+						: null;
 		return new NativeSubqueryPlan(prepared.step(), outSlots, outNames, frameInputSlots, sourceNames, parameterNames,
 				privateParameters.toArray(String[]::new), boundary, prepared.context(), workerFactory,
-				prepared.lateralStepFactory());
+				prepared.lateralStepFactory(), incidence);
+	}
+
+	/** Prove that a lexical DISTINCT exports exactly the two endpoints of one predicate plane. */
+	private NativeSubqueryPlan.Incidence compileDistinctIncidence(TupleExpr expression, Projection projection) {
+		TupleExpr root = expression instanceof QueryRoot queryRoot ? queryRoot.getArg() : expression;
+		if (!(root instanceof Distinct distinct) || distinct.getArg() != projection || projection == null
+				|| projection.getProjectionContext() != null || projection.getInheritedGraphParameter() != null
+				|| projection.getProjectionElemList().getElements().size() != 2) {
+			return null;
+		}
+		TupleExpr body = projection.getArg();
+		List<Extension> extensions = new ArrayList<>();
+		while (body instanceof Extension extension) {
+			extensions.add(extension);
+			body = extension.getArg();
+		}
+		if (body instanceof Graph graph) {
+			if (!GraphScopeOptimizer.canLowerPositiveBasicGraphPattern(graph)
+					|| graph.getGraphName().hasApiInputOrigin()
+					|| !NativeGraphFusion.hasSafeSelectorAndDataset(graph, context.getDataset())) {
+				return null;
+			}
+			body = GraphScopeOptimizer.lowerPositiveBasicGraphPattern(graph);
+		}
+		if (!(body instanceof StatementPattern statement)) {
+			return null;
+		}
+		Var subject = statement.getSubjectVar();
+		Var predicate = statement.getPredicateVar();
+		Var object = statement.getObjectVar();
+		Var graph = statement.getContextVar();
+		if (!predicate.hasValue()) {
+			return compileDistinctPredicateIncidence(statement, projection, extensions);
+		}
+		if (subject.hasValue() || object.hasValue() || subject.hasApiInputOrigin() || object.hasApiInputOrigin()
+				|| subject.getName().equals(object.getName()) || !predicate.hasValue()
+				|| predicate.hasApiInputOrigin() || !predicate.isAnonymous() && !predicate.isConstant()
+				|| graph != null && (graph.hasApiInputOrigin()
+						|| !graph.hasValue() && (graph.getName().equals(subject.getName())
+								|| graph.getName().equals(object.getName())
+								|| graph.getName().equals(predicate.getName())))) {
+			return null;
+		}
+		Map<String, String> origins = new LinkedHashMap<>();
+		origins.put(subject.getName(), subject.getName());
+		origins.put(object.getName(), object.getName());
+		Set<String> localNames = new LinkedHashSet<>(statement.getBindingNames());
+		for (int i = extensions.size() - 1; i >= 0; i--) {
+			for (ExtensionElem element : extensions.get(i).getElements()) {
+				if (!(element.getExpr() instanceof Var sourceVar) || sourceVar.hasValue()
+						|| sourceVar.hasApiInputOrigin() || !origins.containsKey(sourceVar.getName())
+						|| !localNames.add(element.getName())) {
+					return null;
+				}
+				origins.put(element.getName(), origins.get(sourceVar.getName()));
+			}
+		}
+		String subjectOutput = null;
+		String objectOutput = null;
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			if (element.hasAggregateOperatorInExpression()) {
+				return null;
+			}
+			String output = element.getProjectionAlias().orElse(element.getName());
+			String origin = origins.get(element.getName());
+			if (subject.getName().equals(origin)) {
+				subjectOutput = output;
+			} else if (object.getName().equals(origin)) {
+				objectOutput = output;
+			} else {
+				return null;
+			}
+		}
+		if (subjectOutput == null || objectOutput == null || subjectOutput.equals(objectOutput)
+				|| graph != null && !graph.hasValue()
+						&& (graph.getName().equals(subjectOutput) || graph.getName().equals(objectOutput))) {
+			return null;
+		}
+		Set<String> entryNames = new LinkedHashSet<>(List.of(subject.getName(), object.getName(), subjectOutput,
+				objectOutput));
+		entryNames.addAll(localNames);
+		if (graph != null && !graph.isConstant()) {
+			entryNames.add(graph.getName());
+		}
+		if (!Collections.disjoint(entryNames, context.getSubstitutionBindingNames())
+				|| !Collections.disjoint(entryNames, inheritedFrameInputNames)
+				|| !Collections.disjoint(entryNames, inheritedLateralFrameInputNames)) {
+			return null;
+		}
+		// A hidden unbound graph only restricts the accepted contexts. Never expose its local slot to the caller.
+		Var fixedGraph = graph != null && graph.hasValue() ? graph.clone() : null;
+		StatementPattern physical = new StatementPattern(statement.getScope(), new Var(subjectOutput),
+				predicate.clone(), new Var(objectOutput), fixedGraph);
+		PatternPlan pattern = compileStatementPattern(physical);
+		return pattern == null ? null : new NativeSubqueryPlan.Incidence(pattern, List.copyOf(entryNames));
+	}
+
+	/** Prove an independent DISTINCT of predicate and either subject or object, omitting the other node. */
+	private NativeSubqueryPlan.Incidence compileDistinctPredicateIncidence(StatementPattern statement,
+			Projection projection, List<Extension> extensions) {
+		Var subject = statement.getSubjectVar();
+		Var predicate = statement.getPredicateVar();
+		Var object = statement.getObjectVar();
+		Var graph = statement.getContextVar();
+		if (subject.hasValue() || predicate.hasValue() || object.hasValue() || subject.hasApiInputOrigin()
+				|| predicate.hasApiInputOrigin() || object.hasApiInputOrigin()
+				|| subject.getName().equals(predicate.getName()) || subject.getName().equals(object.getName())
+				|| predicate.getName().equals(object.getName())
+				|| graph != null && (graph.hasApiInputOrigin() || !graph.hasValue()
+						&& (graph.getName().equals(subject.getName()) || graph.getName().equals(predicate.getName())
+								|| graph.getName().equals(object.getName())))) {
+			return null;
+		}
+		Map<String, String> origins = new LinkedHashMap<>();
+		origins.put(subject.getName(), subject.getName());
+		origins.put(predicate.getName(), predicate.getName());
+		origins.put(object.getName(), object.getName());
+		Set<String> localNames = new LinkedHashSet<>(statement.getBindingNames());
+		for (int i = extensions.size() - 1; i >= 0; i--) {
+			for (ExtensionElem element : extensions.get(i).getElements()) {
+				if (!(element.getExpr() instanceof Var sourceVar) || sourceVar.hasValue()
+						|| sourceVar.hasApiInputOrigin() || !origins.containsKey(sourceVar.getName())
+						|| !localNames.add(element.getName())) {
+					return null;
+				}
+				origins.put(element.getName(), origins.get(sourceVar.getName()));
+			}
+		}
+		String subjectOutput = null;
+		String predicateOutput = null;
+		String objectOutput = null;
+		for (ProjectionElem element : projection.getProjectionElemList().getElements()) {
+			if (element.hasAggregateOperatorInExpression()) {
+				return null;
+			}
+			String output = element.getProjectionAlias().orElse(element.getName());
+			String origin = origins.get(element.getName());
+			if (subject.getName().equals(origin)) {
+				subjectOutput = output;
+			} else if (predicate.getName().equals(origin)) {
+				predicateOutput = output;
+			} else if (object.getName().equals(origin)) {
+				objectOutput = output;
+			} else {
+				return null;
+			}
+		}
+		String nodeOutput = subjectOutput == null ? objectOutput : subjectOutput;
+		if (predicateOutput == null || nodeOutput == null || subjectOutput != null && objectOutput != null
+				|| nodeOutput.equals(predicateOutput) || graph != null && !graph.hasValue()
+						&& (graph.getName().equals(nodeOutput) || graph.getName().equals(predicateOutput))) {
+			return null;
+		}
+		Set<String> entryNames = new LinkedHashSet<>(localNames);
+		entryNames.add(nodeOutput);
+		entryNames.add(predicateOutput);
+		if (graph != null && !graph.isConstant()) {
+			entryNames.add(graph.getName());
+		}
+		if (!Collections.disjoint(entryNames, context.getSubstitutionBindingNames())
+				|| !Collections.disjoint(entryNames, inheritedFrameInputNames)
+				|| !Collections.disjoint(entryNames, inheritedLateralFrameInputNames)) {
+			return null;
+		}
+		Var fixedGraph = graph != null && graph.hasValue() ? graph.clone() : null;
+		StatementPattern physical = new StatementPattern(statement.getScope(),
+				subjectOutput == null ? subject.clone() : new Var(subjectOutput), new Var(predicateOutput),
+				objectOutput == null ? object.clone() : new Var(objectOutput), fixedGraph);
+		PatternPlan pattern = compileStatementPattern(physical);
+		if (pattern == null) {
+			return null;
+		}
+		int node = subjectOutput == null ? pattern.o.slot : pattern.s.slot;
+		long axes = (1L << node) | (1L << pattern.p.slot);
+		return new NativeSubqueryPlan.Incidence(pattern, List.copyOf(entryNames), axes,
+				NativeSubqueryPlan.IncidenceReduction.PRESENCE);
 	}
 
 	/** One lexical preparation recipe, bound independently to the coordinator or an actual worker authority. */

@@ -57,8 +57,14 @@ import org.eclipse.rdf4j.sail.lmdb.config.DirectAdjacencyMode;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.AdjacencyAccessObserver;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CachedDatatypeSummaryReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CensusPageSweepReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ColdDatatypeSummaryReceipt;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.CursorCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.DatatypePageWorkspace;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.OrderedIntegerDomain;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.ParallelRootCountReceipt;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeLmdbQuerySource.RootCountWorkspace;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 import org.slf4j.Logger;
@@ -77,6 +83,17 @@ import org.slf4j.LoggerFactory;
 final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 
 	private static final Logger logger = LoggerFactory.getLogger(LmdbDirectAdjacencyStore.class);
+	// Base-only probe/catalog and per-plane unrestricted root-count cursor graphs are fixed-size; this proof excludes
+	// payload/context operations and the consuming merge's own arrays.
+	private static final RootCountWorkspace ROOT_COUNT_WORKSPACE = new RootCountWorkspace(4096L, 4096L);
+	// Receipt revalidation, retained probe and cached summary cursor use fixed-size wrappers; no page or root opens.
+	private static final long CACHED_DATATYPE_WORKSPACE_BYTES = 4096L;
+	// Fixed probe/catalog plus one reusable base plane and one page-only cursor; no payload/context traversal.
+	private static final long DATATYPE_PAGE_WORKSPACE_BYTES = 8192L;
+	private static final Object[] COLD_DATATYPE_PLANES = { new Object(), new Object(), new Object(), new Object() };
+	private static final Object[] CENSUS_PLANES = { new Object(), new Object(), new Object(), new Object() };
+	private static final long CENSUS_NODE_PROJECTION_BYTES = 2048L;
+	private static final long CENSUS_PAGE_COPY_STATE_BYTES = 1024L;
 	static final String ROOT_SCAN_PROPERTY = "rdf4j.lmdb.directAdjacency.rootScan.enabled";
 	static final String BOUND_PROBE_PROPERTY = "rdf4j.lmdb.directAdjacency.boundProbe.enabled";
 	static final String CLEAN_TXN_READS_PROPERTY = "rdf4j.lmdb.directAdjacency.cleanTxnReads.enabled";
@@ -3355,6 +3372,33 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 				NativeLmdbQuerySource.UNKNOWN_ID);
 	}
 
+	/** Binds a retained view for a certified census without an unpolled predicate-catalog search. */
+	NativeLmdbQuerySource.NativeAdjacency censusAdjacency(LmdbAdjacencyReadView view, long predicate,
+			boolean bySubject, boolean explicit, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+		NativeLmdbQuerySource.NativeAdjacency adjacency = bindCompleteCensusAdjacency(view, predicate, bySubject,
+				explicit, cancellationPoll);
+		try {
+			// The view is still local here. Release it if the final physical poll refuses before the probe can own it.
+			cancellationPoll.run();
+			if (adjacency == null) {
+				return null;
+			}
+			metrics.recordHit();
+			if (LmdbRuntimeProperties.hotCountersEnabled()) {
+				KERNEL_VIEWS_SERVED.incrementAndGet();
+				if (adjacency instanceof LmdbDecodedNativeAdjacency) {
+					DECODED_KERNEL_VIEWS_SERVED.incrementAndGet();
+				}
+			}
+			return adjacency;
+		} catch (RuntimeException | Error failure) {
+			Throwable cleanup = KernelRuntime.closeResource(adjacency, failure);
+			KernelRuntime.rethrowCloseFailureIfNotPrimary(cleanup, failure);
+			throw failure;
+		}
+	}
+
 	/**
 	 * Binds the concrete decoded CSR only when it is already installed and semantically complete for this snapshot. The
 	 * type choice happens before any anonymous run-cursor adapter is created, allowing generated kernels to select
@@ -3378,6 +3422,47 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			}
 		}
 		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	private NativeLmdbQuerySource.NativeAdjacency bindCompleteCensusAdjacency(LmdbAdjacencyReadView view,
+			long predicate, boolean bySubject, boolean explicit, Runnable cancellationPoll) {
+		long basePredicateOrdinal = completeCensusBasePredicateOrdinal(view, predicate, cancellationPoll);
+		if (basePredicateOrdinal < 0L) {
+			return null;
+		}
+		cancellationPoll.run();
+		int plane = plane(bySubject, explicit);
+		ImmutablePagedQuadCsfIndex csf = view.state().base().csfBase();
+		ImmutablePagedQuadCsfIndex.SharedPartitionLookup shared = csf
+				.sharedPartitionLookupIfPresent(basePredicateOrdinal, plane);
+		cancellationPoll.run();
+		if (shared != null && shared.neighborsDecoded()) {
+			return new LmdbDecodedNativeAdjacency(csf, shared,
+					view.state().base().keyDomain(basePredicateOrdinal, plane));
+		}
+		cancellationPoll.run();
+		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	/** The census receipt admits only this pinned, full-base, no-overlay predicate-bind recipe. */
+	private long completeCensusBasePredicateOrdinal(LmdbAdjacencyReadView view, long predicate,
+			Runnable cancellationPoll) {
+		cancellationPoll.run();
+		if (view == null || !view.servesSnapshot() || closed || options.mode() != DirectAdjacencyMode.PREFER
+				|| writeTransactionBlocksAdjacency() || predicate <= 0L) {
+			return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
+		}
+		cancellationPoll.run();
+		LmdbAdjacencyPublishedState state = view.state();
+		LmdbAdjacencyOverlaySet overlays = state.overlays();
+		if (!state.base().coverage().isFull() || view.snapshotRevision() != state.appliedRevision()
+				|| state.pending().length != 0 || overlays != null && overlays.generationCount() != 0) {
+			return LmdbInMemoryAdjacencyIndex.NOT_COVERED;
+		}
+		cancellationPoll.run();
+		long basePredicateOrdinal = state.base().bindPredicate(predicate, cancellationPoll);
+		cancellationPoll.run();
+		return basePredicateOrdinal < 0L ? LmdbInMemoryAdjacencyIndex.NOT_COVERED : basePredicateOrdinal;
 	}
 
 	/**
@@ -3470,6 +3555,116 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		return state.base().nodeDomainDatatypeSummary(plane(bySubject, explicit), account, lookup, observer);
 	}
 
+	/** Nonbuilding proof over the pinned base; pending histories stay on the unpriced general route. */
+	CachedDatatypeSummaryReceipt cachedDatatypeSummaryReceipt(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit) {
+		if (!cachedDatatypeServing(view)) {
+			return null;
+		}
+		LmdbInMemoryAdjacencyIndex base = view.state().base();
+		LmdbNodeDomainSynopsis.DatatypeSummary summary = base.cachedDatatypeSummary(plane(bySubject, explicit));
+		return summary == null ? null
+				: new CachedDatatypeSummaryReceipt(summary.authority(), bySubject, explicit,
+						summary.groupCount(), CACHED_DATATYPE_WORKSPACE_BYTES);
+	}
+
+	/** Revalidates every fact on the already held view without entering either cache builder. */
+	NativeLmdbQuerySource.DatatypeSummary cachedDatatypeSummary(LmdbAdjacencyReadView view, boolean explicit,
+			CachedDatatypeSummaryReceipt receipt) {
+		if (receipt == null || receipt.explicit() != explicit
+				|| receipt.workspaceBytes() < CACHED_DATATYPE_WORKSPACE_BYTES || !cachedDatatypeServing(view)) {
+			return null;
+		}
+		LmdbInMemoryAdjacencyIndex base = view.state().base();
+		LmdbNodeDomainSynopsis.DatatypeSummary summary = base
+				.cachedDatatypeSummary(plane(receipt.bySubject(), explicit));
+		return summary != null && summary.authority() == receipt.baseAuthority()
+				&& summary.groupCount() == receipt.groups() ? summary : null;
+	}
+
+	private boolean cachedDatatypeServing(LmdbAdjacencyReadView view) {
+		return LmdbRuntimeProperties.adjacencySynopsisEnabled() && view != null && view.state() != null
+				&& view.state().pending().length == 0 && baseDomainServes(view);
+	}
+
+	/** Reads immutable plane metadata only; no synopsis, page, or root producer is opened. */
+	ColdDatatypeSummaryReceipt coldDatatypeSummaryReceipt(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+		if (!scanAggregatesEnabled() || !cachedDatatypeServing(view) || !boundedPredicateSweepAvailable(view)) {
+			return null;
+		}
+		LmdbInMemoryAdjacencyIndex base = view.state().base();
+		ImmutablePagedQuadCsfIndex csf = base.csfBase();
+		int predicates = csf.predicateCount();
+		if (base.predicateCatalog().size() != predicates) {
+			return null;
+		}
+		int selectedPlane = plane(bySubject, explicit);
+		long roots = 0L, quads = 0L, pages = 0L;
+		for (int ordinal = 0; ordinal < predicates; ordinal++) {
+			cancellationPoll.run();
+			long planeRoots = csf.rowCount(ordinal, selectedPlane);
+			long planeQuads = csf.quadCount(ordinal, selectedPlane);
+			ImmutablePagedQuadCsfIndex.KeyDomain domain = base.keyDomain(ordinal, selectedPlane);
+			long planePages = domain == null ? -1L : domain.pageCount(cancellationPoll);
+			if (planeRoots < 0L || planeQuads < planeRoots || planePages < 0L || planePages > planeQuads
+					|| (planeRoots == 0L) != (planeQuads == 0L) || planeRoots == 0L && planePages != 0L
+					|| planeRoots > 0L && planePages == 0L
+					|| planeRoots > Long.MAX_VALUE - roots || planeQuads > Long.MAX_VALUE - quads
+					|| planePages > Long.MAX_VALUE - pages) {
+				return null;
+			}
+			roots += planeRoots;
+			quads += planeQuads;
+			pages += planePages;
+		}
+		long workspace = LmdbNodeDomainSynopsis.coldWorkspaceBytes(predicates, roots);
+		return workspace < 0L ? null
+				: new ColdDatatypeSummaryReceipt(view, COLD_DATATYPE_PLANES[selectedPlane], bySubject, explicit,
+						predicates, roots, quads, pages, workspace);
+	}
+
+	NativeLmdbQuerySource.DatatypeSummary coldDatatypeSummary(LmdbAdjacencyReadView view, boolean explicit,
+			ColdDatatypeSummaryReceipt receipt, LmdbNodeDomainSynopsis.LiteralDatatypeLookup lookup,
+			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer, Runnable cancellationPoll) throws IOException {
+		if (receipt == null || receipt.viewAuthority() != view || receipt.explicit() != explicit) {
+			return null;
+		}
+		ColdDatatypeSummaryReceipt current = coldDatatypeSummaryReceipt(view, receipt.bySubject(), explicit,
+				cancellationPoll);
+		if (current == null || receipt.planeAuthority() != current.planeAuthority()
+				|| receipt.predicates() != current.predicates() || receipt.roots() != current.roots()
+				|| receipt.quads() != current.quads() || receipt.pages() != current.pages()
+				|| receipt.workspaceBytes() < current.workspaceBytes()) {
+			return null;
+		}
+		return view.state()
+				.base()
+				.tryColdDatatypeSummary(plane(receipt.bySubject(), explicit), account, lookup,
+						observer, cancellationPoll);
+	}
+
+	DatatypePageWorkspace datatypePageWorkspace(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit) {
+		return datatypePagesServe(view)
+				? new DatatypePageWorkspace(view, bySubject, explicit, DATATYPE_PAGE_WORKSPACE_BYTES)
+				: null;
+	}
+
+	NativeLmdbQuerySource.WildcardAdjacency datatypePageSweep(LmdbAdjacencyReadView view, boolean explicit,
+			DatatypePageWorkspace receipt) {
+		if (receipt == null || receipt.viewAuthority() != view || receipt.explicit() != explicit
+				|| receipt.workspaceBytes() < DATATYPE_PAGE_WORKSPACE_BYTES || !datatypePagesServe(view)) {
+			return null;
+		}
+		return bindBoundedPredicateSweep(view, receipt.bySubject(), explicit);
+	}
+
+	private boolean datatypePagesServe(LmdbAdjacencyReadView view) {
+		return !LmdbRuntimeProperties.adjacencySynopsisEnabled() && scanAggregatesEnabled()
+				&& view != null && view.state() != null && boundedPredicateSweepAvailable(view);
+	}
+
 	/**
 	 * Whether the base alone answers whole-domain questions for this view. These answers come from the base without
 	 * per-row fallback, so they need the kernel completeness rule of {@link #completeBasePredicateOrdinal}: the
@@ -3557,6 +3752,265 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 		}
 		observeWildcardPredicate(observer, true, "WILDCARD_ADJACENCY_VIEW", bySubject);
 		return new LmdbDirectWildcardAdjacency(view, plane(bySubject, explicit), this::scheduleAdaptiveAcceleration);
+	}
+
+	/** No overlay preparation may run before a key cursor can install its cancellation callback. */
+	NativeLmdbQuerySource.WildcardAdjacency bindBoundedPredicateSweep(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit) {
+		if (!boundedPredicateSweepAvailable(view)) {
+			return null;
+		}
+		return bindWildcardAdjacency(view, bySubject, explicit, null);
+	}
+
+	private boolean boundedPredicateSweepAvailable(LmdbAdjacencyReadView view) {
+		if (view == null || view.state().pending().length != 0) {
+			return false;
+		}
+		LmdbAdjacencyOverlaySet overlays = view.state().overlays();
+		// Flattening a history of summary levels allocates and sorts a catalog without a cancellation poll.
+		// A base-only sweep can use the already-flat immutable domain; otherwise leave it to the ordinary path.
+		return view.state().planeStatistics().summaryLevelCount() == 0
+				&& (overlays == null || overlays.generationCount() == 0) && exactFullSnapshot(view)
+				&& view.snapshotRevision() == view.state().appliedRevision();
+	}
+
+	RootCountWorkspace rootCountWorkspace(LmdbAdjacencyReadView view) {
+		return scanAggregatesEnabled() && boundedPredicateSweepAvailable(view) ? ROOT_COUNT_WORKSPACE : null;
+	}
+
+	/** Reads immutable predicate, plane, root and shard metadata without opening a probe or page. */
+	CensusPageSweepReceipt censusPageSweepReceipt(LmdbAdjacencyReadView view, boolean bySubject, boolean explicit,
+			boolean canonicalIds, boolean needSubjectNodes, boolean needObjectNodes, long defaultContextQuads,
+			Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+		RootCountWorkspace sourceWorkspace = rootCountWorkspace(view);
+		if (sourceWorkspace == null || !view.state().base().coverage().isFull()) {
+			return null;
+		}
+		LmdbInMemoryAdjacencyIndex base = view.state().base();
+		ImmutablePagedQuadCsfIndex csf = base.csfBase();
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
+		int predicates = domain.size();
+		int predicateSegments = base.predicateCatalog().segmentCount();
+		if (predicates != base.predicateCatalog().size() || predicates != csf.predicateCount()
+				|| predicateSegments < 0 || predicateSegments > predicates
+				|| (predicateSegments == 0) != (predicates == 0)) {
+			return null;
+		}
+		int selectedPlane = plane(bySubject, explicit);
+		long roots = 0L;
+		long quads = 0L;
+		long pages = 0L;
+		long shardDescriptors = 0L;
+		int nonemptyPredicates = 0;
+		long previousPredicate = 0L;
+		for (int index = 0; index < predicates; index++) {
+			cancellationPoll.run();
+			long predicate = domain.predicateAt(index);
+			if (predicate <= 0L || index != 0 && Long.compareUnsigned(previousPredicate, predicate) >= 0) {
+				return null;
+			}
+			previousPredicate = predicate;
+			long ordinal = base.bindPredicate(predicate, cancellationPoll);
+			if (ordinal < 0L || ordinal >= predicates) {
+				return null;
+			}
+			long planeRoots = csf.rowCount(ordinal, selectedPlane);
+			long planeQuads = csf.quadCount(ordinal, selectedPlane);
+			ImmutablePagedQuadCsfIndex.KeyDomain keys = base.keyDomain(ordinal, selectedPlane);
+			ImmutablePagedQuadCsfIndex.KeyDomain.RootBounds bounds = keys == null ? null
+					: keys.rootBounds(cancellationPoll);
+			if (bounds == null || planeRoots < 0L || planeQuads < planeRoots || bounds.pages() < 0L
+					|| bounds.pages() > planeQuads || statistics.keyCount(predicate, selectedPlane) != planeRoots
+					|| bounds.shardDescriptors() < 0 || bounds.shardDescriptors() > bounds.pages()
+					|| (bounds.pages() == 0L) != (bounds.shardDescriptors() == 0)
+					|| statistics.quadCount(predicate, selectedPlane) != planeQuads
+					|| (planeRoots == 0L) != (planeQuads == 0L)
+					|| (planeRoots == 0L) != (bounds.pages() == 0L)
+					|| planeRoots > Long.MAX_VALUE - roots || planeQuads > Long.MAX_VALUE - quads
+					|| bounds.pages() > Long.MAX_VALUE - pages
+					|| bounds.shardDescriptors() > Long.MAX_VALUE - shardDescriptors) {
+				return null;
+			}
+			roots += planeRoots;
+			quads += planeQuads;
+			pages += bounds.pages();
+			shardDescriptors += bounds.shardDescriptors();
+			if (bounds.pages() > 0L) {
+				nonemptyPredicates++;
+			}
+		}
+
+		long subjectNodes = -1L;
+		long objectNodes = -1L;
+		LmdbNodePredicateIndex projection = base.nodePredicateIndexOrNull();
+		if (needSubjectNodes) {
+			int subjectPlane = plane(true, explicit);
+			if (projection == null || !projection.supportsPlane(subjectPlane)) {
+				return null;
+			}
+			subjectNodes = projection.rowCount(subjectPlane);
+		}
+		if (needObjectNodes) {
+			int objectPlane = plane(false, explicit);
+			if (projection == null || !projection.supportsPlane(objectPlane)) {
+				return null;
+			}
+			objectNodes = projection.rowCount(objectPlane);
+		}
+		long fixedBytes;
+		try {
+			fixedBytes = Math.addExact(sourceWorkspace.fixedBytes(), CENSUS_PAGE_COPY_STATE_BYTES);
+			if (needSubjectNodes) {
+				fixedBytes = Math.addExact(fixedBytes, CENSUS_NODE_PROJECTION_BYTES);
+			}
+			if (needObjectNodes) {
+				fixedBytes = Math.addExact(fixedBytes, CENSUS_NODE_PROJECTION_BYTES);
+			}
+		} catch (ArithmeticException overflow) {
+			return null;
+		}
+		return new CensusPageSweepReceipt(view, CENSUS_PLANES[selectedPlane], bySubject, explicit, canonicalIds,
+				predicates, nonemptyPredicates, predicateSegments, shardDescriptors, roots, quads, pages, pages,
+				subjectNodes, objectNodes, defaultContextQuads, fixedBytes, sourceWorkspace.planeBytes());
+	}
+
+	/** Revalidates the source facts on the pinned view before binding the receipt's predicate catalog. */
+	NativeLmdbQuerySource.WildcardAdjacency censusPageSweep(LmdbAdjacencyReadView view, boolean explicit,
+			CensusPageSweepReceipt receipt, boolean canonicalIds, long defaultContextQuads,
+			Runnable cancellationPoll) {
+		if (receipt == null || receipt.viewAuthority() != view || receipt.explicit() != explicit
+				|| receipt.planeAuthority() != CENSUS_PLANES[plane(receipt.bySubject(), explicit)]
+				|| receipt.canonicalIds() != canonicalIds) {
+			return null;
+		}
+		CensusPageSweepReceipt current = censusPageSweepReceipt(view, receipt.bySubject(), explicit, canonicalIds,
+				receipt.subjectNodes() >= 0L, receipt.objectNodes() >= 0L, defaultContextQuads, cancellationPoll);
+		if (!sameCensusPageSweepReceipt(receipt, current)) {
+			return null;
+		}
+		return bindBoundedPredicateSweep(view, receipt.bySubject(), explicit);
+	}
+
+	private static boolean sameCensusPageSweepReceipt(CensusPageSweepReceipt expected,
+			CensusPageSweepReceipt current) {
+		return current != null && expected.viewAuthority() == current.viewAuthority()
+				&& expected.planeAuthority() == current.planeAuthority() && expected.bySubject() == current.bySubject()
+				&& expected.explicit() == current.explicit() && expected.canonicalIds() == current.canonicalIds()
+				&& expected.predicates() == current.predicates()
+				&& expected.nonemptyPredicates() == current.nonemptyPredicates()
+				&& expected.predicateSegments() == current.predicateSegments()
+				&& expected.shardDescriptors() == current.shardDescriptors() && expected.roots() == current.roots()
+				&& expected.quads() == current.quads() && expected.pages() == current.pages()
+				&& expected.shardTransitionsUpperBound() == current.shardTransitionsUpperBound()
+				&& expected.subjectNodes() == current.subjectNodes() && expected.objectNodes() == current.objectNodes()
+				&& expected.defaultContextQuads() == current.defaultContextQuads()
+				&& expected.fixedWorkspaceBytes() >= current.fixedWorkspaceBytes()
+				&& expected.planeWorkspaceBytes() >= current.planeWorkspaceBytes();
+	}
+
+	/** Reads only pinned predicate and shard descriptors; no root, page or split producer is opened. */
+	ParallelRootCountReceipt parallelRootCountReceipt(LmdbAdjacencyReadView view, boolean bySubject,
+			boolean explicit, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+		RootCountWorkspace workspace = rootCountWorkspace(view);
+		if (workspace == null) {
+			return null;
+		}
+		LmdbInMemoryAdjacencyIndex base = view.state().base();
+		ImmutablePagedQuadCsfIndex csf = base.csfBase();
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
+		int predicates = domain.size();
+		int segments = base.predicateCatalog().segmentCount();
+		if (predicates <= 0 || predicates != csf.predicateCount()
+				|| predicates != base.predicateCatalog().size() || segments <= 0 || segments > predicates) {
+			return null;
+		}
+		int selectedPlane = plane(bySubject, explicit);
+		long roots = 0L, quads = 0L, pages = 0L, largest = 0L, first = 0L, last = 0L, previousPredicate = 0L;
+		boolean found = false;
+		for (int index = 0; index < predicates; index++) {
+			cancellationPoll.run();
+			long predicate = domain.predicateAt(index);
+			if (predicate <= 0L || index != 0 && Long.compareUnsigned(previousPredicate, predicate) >= 0) {
+				return null;
+			}
+			previousPredicate = predicate;
+			long ordinal = base.bindPredicate(predicate, cancellationPoll);
+			if (ordinal < 0L || ordinal >= predicates) {
+				return null;
+			}
+			long planeRoots = csf.rowCount(ordinal, selectedPlane);
+			long planeQuads = csf.quadCount(ordinal, selectedPlane);
+			ImmutablePagedQuadCsfIndex.KeyDomain keys = base.keyDomain(ordinal, selectedPlane);
+			ImmutablePagedQuadCsfIndex.KeyDomain.RootBounds bounds = keys == null ? null
+					: keys.rootBounds(cancellationPoll);
+			if (bounds == null || planeRoots < 0L || planeQuads < planeRoots || bounds.pages() < 0L
+					|| bounds.pages() > planeQuads || statistics.keyCount(predicate, selectedPlane) != planeRoots
+					|| statistics.quadCount(predicate, selectedPlane) != planeQuads
+					|| (planeRoots == 0L) != (planeQuads == 0L)
+					|| (planeRoots == 0L) != (bounds.pages() == 0L)
+					|| planeRoots > Long.MAX_VALUE - roots || planeQuads > Long.MAX_VALUE - quads
+					|| bounds.pages() > Long.MAX_VALUE - pages) {
+				return null;
+			}
+			roots += planeRoots;
+			quads += planeQuads;
+			pages += bounds.pages();
+			largest = Math.max(largest, planeRoots);
+			if (planeRoots > 0L) {
+				long planeFirst = bounds.firstRoot();
+				long planeLast = bounds.lastRoot();
+				if (planeFirst <= 0L || planeLast <= 0L
+						|| Long.compareUnsigned(planeFirst, planeLast) > 0) {
+					return null;
+				}
+				if (!found || Long.compareUnsigned(planeFirst, first) < 0) {
+					first = planeFirst;
+				}
+				if (!found || Long.compareUnsigned(planeLast, last) > 0) {
+					last = planeLast;
+				}
+				found = true;
+			}
+		}
+		return !found ? null
+				: new ParallelRootCountReceipt(view, bySubject, explicit, predicates, segments, roots, quads, pages,
+						largest, first, last, workspace);
+	}
+
+	NativeLmdbQuerySource.PredicateProjectionStatistics predicateProjectionStatistics(LmdbAdjacencyReadView view,
+			boolean bySubject, boolean explicit, Runnable cancellationPoll) {
+		if (!boundedPredicateSweepAvailable(view)) {
+			return null;
+		}
+		LmdbAdjacencyPlaneStatistics statistics = view.state().planeStatistics();
+		LmdbAdjacencyPlaneStatistics.PredicateDomain domain = statistics.predicateDomain();
+		int plane = plane(bySubject, explicit);
+		long quads = 0L, incidences = 0L, largest = 0L;
+		try {
+			for (int ordinal = 0; ordinal < domain.size(); ordinal++) {
+				if ((ordinal & 1023) == 0) {
+					cancellationPoll.run();
+				}
+				long predicate = domain.predicateAt(ordinal);
+				long keys = statistics.keyCount(predicate, plane);
+				long count = statistics.quadCount(predicate, plane);
+				if (keys < 0L || count < keys || (keys == 0L) != (count == 0L)) {
+					return null;
+				}
+				quads = Math.addExact(quads, count);
+				incidences = Math.addExact(incidences, keys);
+				largest = Math.max(largest, keys);
+			}
+			return new NativeLmdbQuerySource.PredicateProjectionStatistics(quads, incidences, largest,
+					domain.size());
+		} catch (ArithmeticException overflow) {
+			return null;
+		}
 	}
 
 	private void observeWildcardPredicate(AdjacencyAccessObserver observer, boolean used, String reason,
@@ -3734,6 +4188,15 @@ final class LmdbDirectAdjacencyStore implements LmdbAdjacencyProvider {
 			boolean explicit) {
 		long basePredicateOrdinal = view.state().base().bindPredicate(predicate);
 		if (basePredicateOrdinal == LmdbInMemoryAdjacencyIndex.NOT_COVERED) {
+			return null;
+		}
+		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);
+	}
+
+	LmdbDirectNativeAdjacency bindRetainedAdjacency(LmdbAdjacencyReadView view, long predicate, boolean bySubject,
+			boolean explicit, Runnable cancellationPoll) {
+		long basePredicateOrdinal = view.state().base().bindPredicate(predicate, cancellationPoll);
+		if (basePredicateOrdinal < 0L) {
 			return null;
 		}
 		return bindRetainedAdjacency(view, predicate, basePredicateOrdinal, bySubject, explicit);

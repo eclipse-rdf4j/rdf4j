@@ -226,6 +226,25 @@ public interface NativeLmdbQuerySource {
 
 	Value lazyValue(long id) throws QueryEvaluationException;
 
+	/**
+	 * Retains the dictionary authority needed to replay this source's stored terms after the source closes, without
+	 * admitting another statement reader. The lease resolves the same dictionary revision and must be closed by its
+	 * owner. A source without that capability returns null, requiring a lexical spill encoding.
+	 */
+	default DictionaryLease retainDictionaryLease() throws IOException {
+		return null;
+	}
+
+	interface DictionaryLease extends AutoCloseable {
+		/** Identity of the backing dictionary whose stored IDs this lease resolves. */
+		Object idSpace();
+
+		Value lazyValue(long id) throws QueryEvaluationException;
+
+		@Override
+		void close();
+	}
+
 	/** Materializes a value using the complete static position mask of its lexical binding. */
 	default Value lazyValue(long id, int positionMask) throws QueryEvaluationException {
 		return lazyValue(id);
@@ -637,8 +656,25 @@ public interface NativeLmdbQuerySource {
 		};
 	}
 
+	/**
+	 * A worker-confined probe that exposes only fixed-predicate root-count planes. A source-owned parallel worker
+	 * accepts at most the receipt's predicate count in plane bindings per probe; closed bindings count until probe
+	 * close.
+	 */
+	interface RootCountProbe extends AutoCloseable {
+		/** Identity of the independently retained view, or null when no root-only authority is certified. */
+		default Object rootCountViewAuthority() {
+			return null;
+		}
+
+		NativeAdjacency adjacency(long predicate, boolean bySubject) throws IOException;
+
+		@Override
+		void close();
+	}
+
 	@Experimental
-	interface NativeProbe extends java.io.Closeable {
+	interface NativeProbe extends java.io.Closeable, RootCountProbe {
 
 		RecordIterator open(long subj, long pred, long obj, long context) throws IOException;
 
@@ -737,6 +773,54 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * Borrows only the already retained summary described by the receipt. Implementations must recheck the
+		 * receipt's base identity, direction, explicitness, group count and serving capability and return null if any
+		 * changed. This call is nonblocking and must never build a synopsis or summary. The returned summary is valid
+		 * only until this probe closes.
+		 */
+		default DatatypeSummary cachedDatatypeSummary(CachedDatatypeSummaryReceipt receipt) throws IOException {
+			return null;
+		}
+
+		/**
+		 * Builds or borrows only the summary covered by a cold receipt. A busy builder, changed authority or
+		 * unavailable capability must decline without waiting or opening an alternative producer. Implementations poll
+		 * throughout construction and keep the returned summary borrowed from this probe until it closes.
+		 */
+		default DatatypeSummary coldDatatypeSummary(ColdDatatypeSummaryReceipt receipt, Runnable cancellationPoll,
+				DatatypeSummaryBuildObserver observer) throws IOException {
+			return null;
+		}
+
+		/** Binds only the page catalog certified by the receipt, with a nonblocking source-lifetime pin. */
+		default WildcardAdjacency datatypePageSweep(DatatypePageWorkspace receipt) throws IOException {
+			return null;
+		}
+
+		/**
+		 * Binds a bounded page sweep to the exact source view and direction certified by {@code receipt}. The returned
+		 * catalog and every adjacency view opened from it must remain borrowed from this probe until it closes. A
+		 * source that cannot revalidate the receipt on this probe's pinned view returns {@code null} before opening any
+		 * page.
+		 */
+		default WildcardAdjacency censusPageSweep(CensusPageSweepReceipt receipt, Runnable cancellationPoll)
+				throws IOException {
+			return null;
+		}
+
+		/**
+		 * Opens one retained predicate view for a page-sweep receipt while polling the active attempt during the
+		 * predicate bind. This capability is separate from ordinary adjacency lookup because the latter may perform an
+		 * unbounded segmented catalog search without an attempt callback. Implementations that cannot provide the
+		 * callback-aware bind must return {@code null}.
+		 */
+		default NativeAdjacency censusAdjacency(long predicate, boolean bySubject, Runnable cancellationPoll)
+				throws IOException {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			return null;
+		}
+
+		/**
 		 * A borrowed, revision-valid view of every node's predicate row for this direction, or {@code null} when the
 		 * projection cannot serve the complete probe stage. The returned object belongs to this probe, is invalid once
 		 * it closes, and must never be cached in a plan or a reusable kernel object: a fresh instance is allocated per
@@ -763,6 +847,14 @@ public interface NativeLmdbQuerySource {
 		 * worker instead of one adjacency adapter per predicate per input batch.
 		 */
 		default WildcardAdjacency wildcardAdjacency(boolean bySubject) throws IOException {
+			return null;
+		}
+
+		/**
+		 * An exact predicate catalog whose per-plane ordered key-run opens have bounded setup and can install a
+		 * cancellation callback before traversing rows, or null when that whole-snapshot proof is unavailable.
+		 */
+		default WildcardAdjacency boundedPredicateSweep(boolean bySubject) throws IOException {
 			return null;
 		}
 
@@ -915,6 +1007,17 @@ public interface NativeLmdbQuerySource {
 	 */
 	@Experimental
 	public interface RunView {
+		/** Metadata page count with cancellation during source traversal, or -1 if that capability is unknown. */
+		default long pageCount(Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+			return -1L;
+		}
+
+		/** A page cursor whose setup and advance cooperate with cancellation, or null if that capability is unknown. */
+		default NativeAdjacency.AdjacencyPageCursor openPageCursor(Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+			return null;
+		}
 
 		/** Caller-owned proof for a contiguous span in the original, unfiltered run coordinate space. */
 		final class ContextSpan {
@@ -1317,6 +1420,15 @@ public interface NativeLmdbQuerySource {
 		/** Binds the reusable plane cursor to {@code predicateOrdinal}. */
 		void bind(int predicateOrdinal);
 
+		/**
+		 * Binds a certified census plane with cancellation checks around the source-owned segmented predicate search.
+		 * Returns false when this catalog cannot perform that bounded callback-aware bind.
+		 */
+		default boolean bindCensusPredicate(int predicateOrdinal, Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+			return false;
+		}
+
 		int boundPredicateOrdinal();
 
 		long keyCount();
@@ -1395,8 +1507,25 @@ public interface NativeLmdbQuerySource {
 		/** This view cannot answer for the key; the caller must use the store path. */
 		long NOT_COVERED = -2L;
 
+		/**
+		 * True only when key-run cursors enumerate unique keys in unsigned ascending order, opening one uses bounded
+		 * state, and advancing, counting a run and copying contexts in bounded chunks cooperate with the installed
+		 * cancellation poll without retaining unbounded per-run state. Consumers may then merge several plane cursors.
+		 */
+		default boolean orderedKeyRunsWithBoundedOpen() {
+			return false;
+		}
+
 		static KeyRunCursor boundedKeyRunCursor(KeyRunCursor delegate, long fromOrdinal, long toOrdinal) {
 			return new KeyRunCursor() {
+				private Runnable cancellationPoll;
+
+				@Override
+				public void cancellationPoll(Runnable cancellationPoll) {
+					this.cancellationPoll = cancellationPoll;
+					delegate.cancellationPoll(cancellationPoll);
+				}
+
 				@Override
 				public boolean contextSpan(long fromOffset, ContextSpan target) {
 					return delegate.contextSpan(fromOffset, target);
@@ -1424,6 +1553,9 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public boolean advance() {
 					while (ordinal < fromOrdinal) {
+						if (cancellationPoll != null) {
+							cancellationPoll.run();
+						}
 						if (!delegate.advance()) {
 							return false;
 						}
@@ -1454,6 +1586,18 @@ public interface NativeLmdbQuerySource {
 				@Override
 				public long distinctNeighborCount() {
 					return delegate.distinctNeighborCount();
+				}
+
+				@Override
+				public boolean supportsPhysicalFiberCopy() {
+					return delegate.supportsPhysicalFiberCopy();
+				}
+
+				@Override
+				public int copyFibers(long runOffset, int length, long[] neighborTarget, int neighborOffset,
+						long[] multiplicityTarget, int multiplicityOffset) {
+					return delegate.copyFibers(runOffset, length, neighborTarget, neighborOffset, multiplicityTarget,
+							multiplicityOffset);
 				}
 
 				@Override
@@ -2117,6 +2261,10 @@ public interface NativeLmdbQuerySource {
 		 */
 		@Experimental
 		interface KeyRunCursor extends AutoCloseable {
+			/** Installs an optional check invoked during potentially unbounded physical traversal. */
+			default void cancellationPoll(Runnable cancellationPoll) {
+			}
+
 			default boolean contextSpan(long fromOffset, ContextSpan target) {
 				return false;
 			}
@@ -2258,6 +2406,19 @@ public interface NativeLmdbQuerySource {
 			 */
 			default int fillFibers(FiberBatch target, boolean classifyTermTraits) {
 				return fillFibers(target);
+			}
+
+			/**
+			 * Whether the positioned run copies physical fibers without scanning one entry per represented context row.
+			 * The capability may change after each {@link #advance()}. A true result permits a bounded fiber batch
+			 * between cancellation polls, independent of the fibers' logical multiplicities. The scalar fallback in
+			 * {@link #copyFibers(long, int, long[], int, long[], int)} does not provide this guarantee; consumers
+			 * requiring bounded cancellation must keep their bounded quad-copy path when this is false. Current CSF
+			 * providers advertise this only for single-page rows: an extent chain can span arbitrarily many pages for
+			 * one logical fiber, so its complete traversal is not a bounded fiber batch.
+			 */
+			default boolean supportsPhysicalFiberCopy() {
+				return false;
 			}
 
 			/**
@@ -2504,6 +2665,15 @@ public interface NativeLmdbQuerySource {
 		}
 
 		/**
+		 * Cancellation-aware physical ordinal seek, or {@code -1} when the source cannot bound and poll its positioning
+		 * work. A successful implementation polls during any directory or continuation traversal, not just on entry.
+		 */
+		default long lowerBoundKeyOrdinal(long key, Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+			return -1L;
+		}
+
+		/**
 		 * Opens a key-and-run cursor. The fallback is intentionally only one object per enumeration, not per key;
 		 * native implementations override it to preserve their physical row coordinates and avoid every
 		 * {@code keyAt -> find} round trip. It still emits every logical key when a fallback lookup returns no run,
@@ -2609,6 +2779,15 @@ public interface NativeLmdbQuerySource {
 			return boundedKeyRunCursor(delegate, fromOrdinal, toOrdinal);
 		}
 
+		/**
+		 * Opens a directly positioned key window with cancellation active during positioning and subsequent physical
+		 * traversal. Returns null when that bounded, cancellation-aware capability is unavailable.
+		 */
+		default KeyRunCursor openKeyRunCursor(long fromOrdinal, long toOrdinal, Runnable cancellationPoll) {
+			Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+			return null;
+		}
+
 		@Override
 		default void close() {
 		}
@@ -2685,6 +2864,227 @@ public interface NativeLmdbQuerySource {
 	 */
 	default OptionalLong predicateDomainCardinality() {
 		return OptionalLong.empty();
+	}
+
+	/**
+	 * Snapshot-exact whole-plane metadata for the bounded predicate-key sweep. Incidences sum distinct root keys over
+	 * predicate planes; the largest plane is a lower bound, not an estimate, on the union of those root domains.
+	 * Context restrictions only remove entries, so these unfiltered counts remain safe upper bounds for a scoped scan.
+	 */
+	record PredicateProjectionStatistics(long quads, long incidences, long largestRootDomain, long predicates) {
+		public PredicateProjectionStatistics {
+			if (quads < 0L || incidences < 0L || largestRootDomain < 0L || predicates < 0L
+					|| largestRootDomain > incidences || incidences > quads) {
+				throw new IllegalArgumentException("invalid predicate projection statistics");
+			}
+		}
+	}
+
+	/** Source-owned query workspace ceilings for a complete bounded root-count recipe, before opening a probe. */
+	record RootCountWorkspace(long fixedBytes, long planeBytes) {
+		public RootCountWorkspace {
+			if (fixedBytes <= 0L || planeBytes <= 0L) {
+				throw new IllegalArgumentException("invalid root-count workspace ceiling");
+			}
+		}
+	}
+
+	/**
+	 * Same-view, same-plane facts for a bounded parallel root-count scan. The authority is an identity token, not a
+	 * lease; each accepted worker must independently retain the exact view. The endpoints use unsigned raw root order
+	 * and do not assert a uniform RDF term type between them. Workspace covers source-owned probe and plane graphs;
+	 * worker scheduling, split arrays, merge windows, reducers and output remain consumer-owned.
+	 */
+	record ParallelRootCountReceipt(Object viewAuthority, boolean bySubject, boolean explicit, int predicates,
+			int predicateSegments, long roots, long quads, long pages, long largestRootDomain, long firstRoot,
+			long lastRoot, RootCountWorkspace workspace) {
+		public ParallelRootCountReceipt {
+			Objects.requireNonNull(viewAuthority, "viewAuthority");
+			Objects.requireNonNull(workspace, "workspace");
+			if (predicates <= 0 || predicateSegments <= 0 || predicateSegments > predicates
+					|| roots <= 0L || quads < roots || pages <= 0L || pages > quads
+					|| largestRootDomain <= 0L || largestRootDomain > roots || firstRoot <= 0L || lastRoot <= 0L
+					|| Long.compareUnsigned(firstRoot, lastRoot) > 0) {
+				throw new IllegalArgumentException("invalid parallel root-count receipt");
+			}
+		}
+	}
+
+	/** An independent retained-view lease for one worker; probes and their cursors are worker-confined. */
+	interface RootCountWorker extends AutoCloseable {
+		Object viewAuthority();
+
+		boolean bySubject();
+
+		boolean explicit();
+
+		int predicateCount();
+
+		long predicateAt(int ordinal);
+
+		RootCountProbe newProbe();
+
+		@Override
+		void close();
+	}
+
+	/** Non-building metadata proof; unsupported sources return null without opening a producer. */
+	default ParallelRootCountReceipt parallelRootCountReceipt(boolean bySubject, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+		return null;
+	}
+
+	/**
+	 * Retains exactly {@code count} distinct, non-null root-only worker leases for the exact receipt, or returns null
+	 * before publishing any worker. The caller reserves the proved source workspace and worker-array overhead before
+	 * invoking this method and closes all returned workers only after their tasks have drained. Each probe owns an
+	 * independent view lease and remains valid until it closes.
+	 */
+	default RootCountWorker[] openParallelRootCountWorkers(ParallelRootCountReceipt receipt, int count,
+			Runnable cancellationPoll) throws IOException {
+		Objects.requireNonNull(receipt, "receipt");
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+		if (count <= 0) {
+			throw new IllegalArgumentException("root-count worker count must be positive");
+		}
+		return null;
+	}
+
+	/**
+	 * A source-owned, non-building receipt for an already retained datatype summary. {@code baseAuthority} is an opaque
+	 * identity token for the retained base and plane, compared by identity, not a snapshot number or an RDF value.
+	 * {@code groups} counts physical summary contributions, which can exceed the number of distinct datatype terms.
+	 * {@code workspaceBytes} covers runtime receipt revalidation, source-owned probe and cached-summary cursor setup
+	 * before any is allocated; the caller owns reducer and output allocations separately.
+	 */
+	record CachedDatatypeSummaryReceipt(Object baseAuthority, boolean bySubject, boolean explicit, long groups,
+			long workspaceBytes) {
+		public CachedDatatypeSummaryReceipt {
+			Objects.requireNonNull(baseAuthority, "baseAuthority");
+			if (groups < 0L || workspaceBytes <= 0L) {
+				throw new IllegalArgumentException("invalid cached datatype summary receipt");
+			}
+		}
+	}
+
+	/**
+	 * Returns a non-building, nonblocking receipt for a retained summary on this source's pinned view, or null when no
+	 * such source-owned proof is available. This method must not open a probe, traverse roots, or build caches.
+	 */
+	default CachedDatatypeSummaryReceipt cachedDatatypeSummaryReceipt(boolean bySubject) {
+		return null;
+	}
+
+	/**
+	 * Same-view metadata and workspace proof for building an exact datatype summary from a cold base. Root incidences
+	 * are summed over predicates; page counts include continuation pages. The view and plane tokens are facts, not an
+	 * independent lease. Workspace includes source revalidation, probe setup and the builder's transient allocations;
+	 * retained synopsis storage is owned by the source, while reducer and result allocations belong to the consumer.
+	 */
+	record ColdDatatypeSummaryReceipt(Object viewAuthority, Object planeAuthority, boolean bySubject, boolean explicit,
+			int predicates,
+			long roots, long quads, long pages, long workspaceBytes) {
+		public ColdDatatypeSummaryReceipt {
+			Objects.requireNonNull(viewAuthority, "viewAuthority");
+			Objects.requireNonNull(planeAuthority, "planeAuthority");
+			if (predicates < 0 || roots < 0L || quads < roots || pages < 0L || pages > quads
+					|| workspaceBytes <= 0L) {
+				throw new IllegalArgumentException("invalid cold datatype summary receipt");
+			}
+		}
+	}
+
+	/** Returns a non-building, nonblocking source receipt, or null when the cold recipe cannot be certified. */
+	default ColdDatatypeSummaryReceipt coldDatatypeSummaryReceipt(boolean bySubject, Runnable cancellationPoll) {
+		return null;
+	}
+
+	/**
+	 * Same-view, same-plane proof for a bounded, cancellation-aware physical page sweep. The opaque view token is a
+	 * fact, not a lease. The workspace covers runtime receipt validation, one source probe, bounded catalog, reusable
+	 * plane and page cursor; reducer, dictionary and output storage belong to the consumer. A successful source proof
+	 * also guarantees positive pages and page-local row visits no greater than {@code R + B}, where R is the sum of
+	 * distinct plane roots and B is the page count.
+	 */
+	record DatatypePageWorkspace(Object viewAuthority, boolean bySubject, boolean explicit, long workspaceBytes) {
+		public DatatypePageWorkspace {
+			Objects.requireNonNull(viewAuthority, "viewAuthority");
+			if (workspaceBytes <= 0L) {
+				throw new IllegalArgumentException("invalid datatype page workspace");
+			}
+		}
+	}
+
+	/** Nonbuilding, nonblocking page-only receipt, or null when the source cannot certify that physical recipe. */
+	default DatatypePageWorkspace datatypePageWorkspace(boolean bySubject) {
+		return null;
+	}
+
+	/**
+	 * Same-view receipt for the complete predicate catalog and physical pages used by the global census reducer. The
+	 * {@code roots} value is the exact number of logical roots, while the sum T of page-local root rows can repeat a
+	 * logical root when its adjacency continues on later pages. A complete monotonic page sweep guarantees
+	 * {@code roots <= T <= min(quads, roots + pages)}: every logical root appears at least once, a repeated page-local
+	 * root consumes at least one quad, and each nonempty page contributes at most one continued root. Consumers must
+	 * validate and retain T separately; they must not equate it with {@code roots}. The quad and page counts are exact.
+	 * {@code nonemptyPredicates}, {@code predicateSegments}, and {@code shardDescriptors} are exact source counts for
+	 * the selected plane and base predicate catalog. {@code shardTransitionsUpperBound} remains a separate upper bound
+	 * derived from the source's nonempty-shard contract; it is deliberately not reported as an observed transition
+	 * count. Optional node counts are exact only when requested and available. A default-context count of {@code -1} is
+	 * unknown. Workspace bytes cover the source probe/catalog, the reusable plane plus one retained plane view per
+	 * predicate, the optional node-projection wrappers, and the fixed repaired page-copy state. Reducer storage,
+	 * payload batches and output stay with the consumer and its query ledger. A nonnull receipt also certifies the
+	 * immutable CSF monotonic row-copy recipe used by the page sweep: a mixed page visits each preceding context-count
+	 * entry once, for an exact prefix of {@code fiberCount - rowFiberCount(lastRow)}; when
+	 * {@code quadCount == fiberCount}, the encoder's context-count-one flag makes that prefix empty. The last-row
+	 * fiber-count lookup is one bounded vector access with no payload allocation or adaptive neighbor state. Providers
+	 * unable to certify this same copy recipe must return {@code null} instead of publishing a page-sweep receipt.
+	 */
+	record CensusPageSweepReceipt(Object viewAuthority, Object planeAuthority, boolean bySubject, boolean explicit,
+			boolean canonicalIds, int predicates, int nonemptyPredicates, int predicateSegments, long shardDescriptors,
+			long roots, long quads, long pages, long shardTransitionsUpperBound, long subjectNodes, long objectNodes,
+			long defaultContextQuads, long fixedWorkspaceBytes,
+			long planeWorkspaceBytes) {
+		public CensusPageSweepReceipt {
+			Objects.requireNonNull(viewAuthority, "viewAuthority");
+			Objects.requireNonNull(planeAuthority, "planeAuthority");
+			if (predicates < 0 || nonemptyPredicates < 0 || nonemptyPredicates > predicates || predicateSegments < 0
+					|| predicateSegments > predicates || (predicateSegments == 0) != (predicates == 0)
+					|| shardDescriptors < 0L || shardDescriptors > pages
+					|| shardDescriptors < nonemptyPredicates || roots < 0L || quads < roots || pages < 0L
+					|| pages > quads
+					|| shardTransitionsUpperBound < 0L || shardTransitionsUpperBound > pages
+					|| subjectNodes < -1L || objectNodes < -1L || defaultContextQuads < -1L
+					|| fixedWorkspaceBytes <= 0L || planeWorkspaceBytes <= 0L) {
+				throw new IllegalArgumentException("invalid census page-sweep receipt");
+			}
+		}
+	}
+
+	/**
+	 * Returns nonbuilding facts for one complete immutable page source. Implementations must not open a probe, page,
+	 * root or payload producer. Node counts are requested only for DISTINCT channels that need those projections.
+	 */
+	default CensusPageSweepReceipt censusPageSweepReceipt(boolean bySubject, boolean needSubjectNodes,
+			boolean needObjectNodes, Runnable cancellationPoll) throws IOException {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll");
+		return null;
+	}
+
+	/**
+	 * Same-snapshot, same-direction workspace proof for a bounded catalog and its unrestricted root-count plane
+	 * views/cursors. Fixed bytes cover the probe and catalog; plane bytes cover each view/cursor graph, including the
+	 * catalog's reusable plane. This is a bound for the lifetime of this retained source/snapshot, including later
+	 * probes. It excludes the consumer's merge arrays and every payload, context, lookup or batch operation. Null means
+	 * unknown.
+	 */
+	default RootCountWorkspace rootCountWorkspace(boolean bySubject) {
+		return null;
+	}
+
+	/** Null means the complete bounded-open sweep or its snapshot metadata is not established. */
+	default PredicateProjectionStatistics predicateProjectionStatistics(boolean bySubject, Runnable cancellationPoll) {
+		return null;
 	}
 
 	/**

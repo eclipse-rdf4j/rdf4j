@@ -12,13 +12,31 @@
 
 package org.eclipse.rdf4j.sail.lmdb.evaluation;
 
-import java.nio.file.*;
-import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Random;
+import java.util.Set;
 import java.util.function.LongUnaryOperator;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbQueryMemoryManager;
-import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.*;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancellation;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelCancelledException;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelQueryCancelledException;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 
 public class NativeCountGroupStoreTest {
 	static void check(boolean b, String why) {
@@ -47,7 +65,7 @@ public class NativeCountGroupStoreTest {
 	static Set<Path> files() throws Exception {
 		try (var f = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
 			return f.filter(p -> p.getFileName().toString().startsWith("rdf4j-lmdb-native-sort-"))
-					.collect(java.util.stream.Collectors.toSet());
+					.collect(Collectors.toSet());
 		}
 	}
 
@@ -70,6 +88,66 @@ public class NativeCountGroupStoreTest {
 				r[original.length + i] = ds[i] ? distinct[i].size() : counts[i];
 			return Arrays.toString(r);
 		}
+	}
+
+	private enum PositiveMutation {
+		ADD_VALUE {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.add(new long[] { groupId }, new long[] { 7L }, weight);
+			}
+		},
+		ADD_NULL_VALUE {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.add(new long[] { groupId }, new long[] { -1L }, weight);
+			}
+		},
+		ADD_CHANNEL_VALUE {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.addChannel(new long[] { groupId }, 0, 7L, weight);
+			}
+		},
+		ADD_CHANNEL_GROUP_ONLY {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.addChannel(new long[] { groupId }, -1, 7L, weight);
+			}
+		},
+		ADD_CHANNEL_NULL_VALUE {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.addChannel(new long[] { groupId }, 0, -1L, weight);
+			}
+		},
+		ADD_SINGLE_COUNT_VALUE {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.addSingleCount(groupId, 7L, weight);
+			}
+		},
+		ADD_SINGLE_COUNT_NULL_VALUE {
+			@Override
+			void apply(NativeCountGroupStore store, long groupId, long weight) {
+				store.addSingleCount(groupId, -1L, weight);
+			}
+		};
+
+		abstract void apply(NativeCountGroupStore store, long groupId, long weight);
+	}
+
+	private enum CancellationSource {
+		PROBE,
+		OWNED_QUERY
+	}
+
+	private static Stream<Arguments> positiveMutationCases() {
+		return Arrays.stream(PositiveMutation.values())
+				.flatMap(mutation -> Arrays.stream(CancellationSource.values())
+						.flatMap(source -> Stream.of(false, true)
+								.flatMap(spilled -> Stream.of(false, true)
+										.map(newGroup -> Arguments.of(mutation, source, spilled, newGroup)))));
 	}
 
 	@Test
@@ -252,6 +330,87 @@ public class NativeCountGroupStoreTest {
 			eq(0L, manager.usedBytes());
 		}
 		eq(before, files());
+	}
+
+	@ParameterizedTest(name = "{0} with {1}, spilled={2}, newGroup={3}")
+	@MethodSource("positiveMutationCases")
+	public void positiveMutationsCheckCancellationBeforeUpdatingState(PositiveMutation mutation,
+			CancellationSource cancellationSource, boolean spilled, boolean newGroup) throws Exception {
+		Set<Path> before = files();
+		LmdbQueryMemoryManager manager = manager();
+		NativeCancellationToken queryCancellation = cancellationSource == CancellationSource.OWNED_QUERY
+				? new NativeCancellationToken()
+				: null;
+		LmdbNativeProbeDeadline probeDeadline = cancellationSource == CancellationSource.PROBE
+				? LmdbNativeProbeDeadline.trippableOnly()
+				: null;
+		try (LmdbNativeProbeDeadline.Scope ignored = probeDeadline == null ? null
+				: LmdbNativeProbeDeadline.enter(probeDeadline)) {
+			KernelCancellation cancellation = LmdbNativeProbeDeadline.currentKernelCancellation(queryCancellation);
+			try (var ledger = manager.openQuery();
+					var store = new NativeCountGroupStore(1, new boolean[] { false }, x -> x, cancellation, ledger,
+							4096)) {
+				int seedGroups = spilled ? 128 : 5;
+				for (int group = 0; group < seedGroups; group++) {
+					mutation.apply(store, group, 1L);
+				}
+				if (spilled) {
+					check(store.spilledRecords() > 0L, "fixture did not spill");
+				}
+				long residentGroup = 10_000L;
+				mutation.apply(store, residentGroup, 1L);
+
+				if (cancellationSource == CancellationSource.PROBE) {
+					probeDeadline.trip();
+					Assertions.assertThrows(KernelCancelledException.class,
+							() -> mutation.apply(store, newGroup ? residentGroup + 1L : residentGroup, 1L));
+				} else {
+					queryCancellation.requestCancellation();
+					KernelQueryCancelledException failure = Assertions.assertThrows(KernelQueryCancelledException.class,
+							() -> mutation.apply(store, newGroup ? residentGroup + 1L : residentGroup, 1L));
+					check(queryCancellation.owns(failure), "query cancellation lost its owner");
+				}
+				eq(0L, manager.usedBytes());
+			}
+		}
+		eq(before, files());
+	}
+
+	@ParameterizedTest(name = "{0} preserves zero-weight no-op with {1}")
+	@MethodSource("zeroWeightMutationCases")
+	public void zeroWeightMutationsRemainNoOpsAfterCancellation(PositiveMutation mutation,
+			CancellationSource cancellationSource) {
+		LmdbQueryMemoryManager manager = manager();
+		NativeCancellationToken queryCancellation = cancellationSource == CancellationSource.OWNED_QUERY
+				? new NativeCancellationToken()
+				: null;
+		LmdbNativeProbeDeadline probeDeadline = cancellationSource == CancellationSource.PROBE
+				? LmdbNativeProbeDeadline.trippableOnly()
+				: null;
+		try (LmdbNativeProbeDeadline.Scope ignored = probeDeadline == null ? null
+				: LmdbNativeProbeDeadline.enter(probeDeadline)) {
+			KernelCancellation cancellation = LmdbNativeProbeDeadline.currentKernelCancellation(queryCancellation);
+			try (var ledger = manager.openQuery();
+					var store = new NativeCountGroupStore(1, new boolean[] { false }, x -> x, cancellation, ledger,
+							4096)) {
+				mutation.apply(store, 1L, 1L);
+				long rowsBeforeNoOp = store.inputRows();
+				if (cancellationSource == CancellationSource.PROBE) {
+					probeDeadline.trip();
+				} else {
+					queryCancellation.requestCancellation();
+				}
+				mutation.apply(store, 1L, 0L);
+				eq(rowsBeforeNoOp, store.inputRows());
+			}
+		}
+		eq(0L, manager.usedBytes());
+	}
+
+	private static Stream<Arguments> zeroWeightMutationCases() {
+		return Arrays.stream(PositiveMutation.values())
+				.flatMap(mutation -> Arrays.stream(CancellationSource.values())
+						.map(source -> Arguments.of(mutation, source)));
 	}
 
 	@Test

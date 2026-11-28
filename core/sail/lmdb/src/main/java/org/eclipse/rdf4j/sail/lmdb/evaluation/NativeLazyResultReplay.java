@@ -45,7 +45,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private final NativeResultRow.Schema schema;
 	private final NativeExecutionContext context;
 	private final NativeCancellationToken cancellation;
-	private final NativeSpillValueCodec codec;
+	private final NativeLmdbQuerySource termSource;
 	private final KernelRuntime.AggregateMemory memory;
 	private final long maxBytes;
 	private final List<Cursor> readers = new ArrayList<>();
@@ -53,6 +53,8 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 	private volatile NativeResultCursor producer;
 	private volatile Throwable terminalFailure;
 	private volatile boolean closeRequested;
+	private NativeLmdbQuerySource.DictionaryLease dictionary;
+	private NativeSpillValueCodec writerCodec;
 	private DataOutputStream output;
 	private CountedOutput countedOutput;
 	private Path path;
@@ -61,13 +63,17 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 
 	NativeLazyResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation,
 			NativeResultCursor producer) {
+		this(names, context, cancellation, producer, null);
+	}
+
+	NativeLazyResultReplay(String[] names, NativeExecutionContext context, NativeCancellationToken cancellation,
+			NativeResultCursor producer, NativeLmdbQuerySource termSource) {
 		this.schema = new NativeResultRow.Schema(names);
 		this.context = context;
 		this.cancellation = new NativeCancellationToken(cancellation);
 		this.producer = producer;
+		this.termSource = termSource;
 		this.maxBytes = Math.max(WORKSPACE_BYTES, NativeCountGroupStore.configuredMaxBytes());
-		this.codec = new NativeSpillValueCodec(this.cancellation,
-				context == null ? null : context::authoritativeQueryScopedValue);
 		this.memory = KernelRuntime.AggregateMemory.forLedger(context == null ? null : context.memoryLedger());
 		NativeExecutionContext.Lease activeLease = null;
 		Throwable failure = null;
@@ -136,12 +142,16 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			cells[index] = next.cell(schema.name(index));
 		}
 		NativeResultRow row = new NativeResultRow(schema, cells);
-		long retained = retainedBytes(row);
-		if (path == null && retained <= maxBytes - WORKSPACE_BYTES - residentBytes && memory.tryReserve(retained)) {
-			resident.add(row);
-			residentBytes = Math.addExact(residentBytes, retained);
+		if (path == null) {
+			long retained = retainedBytes(row);
+			if (retained <= maxBytes - WORKSPACE_BYTES - residentBytes && memory.tryReserve(retained)) {
+				resident.add(row);
+				residentBytes = Math.addExact(residentBytes, retained);
+			} else {
+				spill();
+				write(row);
+			}
 		} else {
-			spill();
 			write(row);
 		}
 		cancellation.check();
@@ -156,6 +166,9 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			return;
 		}
 		try (NativeExecutionPhaseEvent.Span phase = NativeExecutionPhaseEvent.start("spill", cancellation)) {
+			dictionary = termSource == null ? null : termSource.retainDictionaryLease();
+			writerCodec = new NativeSpillValueCodec(cancellation,
+					context == null ? null : context::authoritativeQueryScopedValue, null, dictionary);
 			path = Files.createTempFile("rdf4j-lmdb-lazy-result-", ".spill");
 			OPEN_FILES.incrementAndGet();
 			countedOutput = new CountedOutput(new BufferedOutputStream(Files.newOutputStream(path), 4096));
@@ -187,7 +200,7 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			output.writeByte(cell.state().ordinal());
 			if (cell.state() == NativeResultCell.State.BOUND) {
 				if (cell.kind() == NativeResultCell.Kind.RDF_TERM) {
-					codec.write(output, cell.value());
+					writerCodec.write(output, cell.value());
 				} else {
 					output.writeLong(cell.codePointLength());
 				}
@@ -263,15 +276,20 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 				}
 			}
 		}, failure);
+		if (writerCodec != null) {
+			writerCodec.clearBlankNodeOrigins();
+			writerCodec = null;
+		}
+		failure = KernelRuntime.closeResource(dictionary, failure);
+		dictionary = null;
 		resident = null;
-		codec.clearBlankNodeOrigins();
 		return KernelRuntime.closeResource(memory, failure);
 	}
 
 	private final class Cursor implements NativeResultCursor {
 		private final NativeCancellationToken localCancellation;
 		private final NativeExecutionContext.Lease lease;
-		private final NativeSpillValueCodec readerCodec;
+		private NativeSpillValueCodec readerCodec;
 		private CountedInput countedInput;
 		private DataInputStream input;
 		private long position, offset;
@@ -280,7 +298,6 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 		private Cursor(NativeCancellationToken parent, NativeExecutionContext.Lease lease) {
 			this.localCancellation = new NativeCancellationToken(parent);
 			this.lease = lease;
-			this.readerCodec = codec.reader(localCancellation);
 		}
 
 		@Override
@@ -354,6 +371,9 @@ final class NativeLazyResultReplay implements AutoCloseable, CooperativeCancella
 			}
 			if (output != null) {
 				output.flush();
+			}
+			if (readerCodec == null) {
+				readerCodec = writerCodec.reader(localCancellation);
 			}
 			if (input == null) {
 				FileInputStream file = new FileInputStream(path.toFile());

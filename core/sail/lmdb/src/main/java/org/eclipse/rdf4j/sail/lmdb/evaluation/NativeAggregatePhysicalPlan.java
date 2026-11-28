@@ -27,6 +27,16 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 
 		String properties();
 
+		/** True when the complete quoted work finishes before the first result can reach the consumer. */
+		default boolean blocksBeforeOutput() {
+			return false;
+		}
+
+		/** True when this producer's own quote already includes its retained-group storage work. */
+		default boolean retentionWorkIncluded() {
+			return false;
+		}
+
 		/** Resource facts from this producer's same successful quote; absence is an unproved cold choice. */
 		default ColdAnchor coldAnchor(RowState row, Work quotedWork) {
 			return null;
@@ -102,7 +112,11 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 					.append(aggregate.resultDemand)
 					.append('/');
 		}
-		return result.append(",input=").append(inputProperties(plan.input())).append(']').toString();
+		result.append(",input=").append(inputProperties(plan.input()));
+		if (plan.sparse() != null) {
+			result.append(",producer=").append(plan.sparse().properties());
+		}
+		return result.append(']').toString();
 	}
 
 	/** Binds only proven independent lexical producers. The original AUTO plan remains a separate alternative. */
@@ -120,7 +134,11 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 	/** Uses the already prepared worker callbacks and the selected physical order, never a new child ranking. */
 	static SlotPlan rebindInput(SlotPlan selected, SlotPlan prepared, NativeScalarPlan.WorkerContext worker) {
 		if (selected instanceof NativeSubqueryPlan lexical && prepared instanceof NativeSubqueryPlan actual) {
-			return lexical.rebindPhysicalPlan(actual, worker);
+			if (lexical.physicalInput() != null) {
+				return lexical.rebindPhysicalPlan(actual, worker);
+			}
+			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(lexical);
+			return recipe != null && recipe.matches(actual) && actual.workerBindable() ? actual : null;
 		}
 		if (selected instanceof PatternPlan pattern && prepared instanceof PatternPlan actual) {
 			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(pattern);
@@ -136,6 +154,39 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 			}
 			SlotPlan child = rebindInput(extension.arg, actual.arg, worker);
 			return child == null ? null : new ExtensionPlan(child, actual.copies);
+		}
+		if (selected instanceof FilterPlan filter && prepared instanceof FilterPlan actual) {
+			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(filter);
+			if (recipe == null || !recipe.matches(actual)) {
+				return null;
+			}
+			SlotPlan child = rebindInput(filter.arg, actual.arg, worker);
+			return child == null ? null
+					: new FilterPlan(child, actual.filter, actual.filterMask,
+							actual.termKindFilter);
+		}
+		if (selected instanceof JoinPlan join && prepared instanceof JoinPlan actual) {
+			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(join);
+			if (recipe == null || !recipe.matches(actual)) {
+				return null;
+			}
+			SlotPlan left = rebindInput(join.left, actual.left, worker);
+			SlotPlan right = rebindInput(join.right, actual.right, worker);
+			return left == null || right == null ? null : new JoinPlan(left, right);
+		}
+		if (selected instanceof MultiJoinPlan join && prepared instanceof MultiJoinPlan actual) {
+			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(join);
+			if (recipe == null || !recipe.matches(actual)) {
+				return null;
+			}
+			SlotPlan[] children = new SlotPlan[join.children.length];
+			for (int i = 0; i < children.length; i++) {
+				children[i] = rebindInput(join.children[i], actual.children[i], worker);
+				if (children[i] == null) {
+					return null;
+				}
+			}
+			return new MultiJoinPlan(children, actual.filters);
 		}
 		if (selected instanceof ValuesPlan && prepared instanceof ValuesPlan) {
 			NativePhysicalInputRecipe recipe = NativePhysicalInputRecipe.capture(selected);
@@ -172,5 +223,37 @@ record NativeAggregatePhysicalPlan(SlotPlan input, Retention retention, Producer
 			producer = NativeSelectedResultProducer.create(plan, iteration);
 		}
 		return new NativeAggregatePhysicalPlan(plan.input(), retention, producer);
+	}
+
+	/** The retained child can attempt one sparse recipe then one fixed table recipe, never a new ranking. */
+	static NativeAggregatePhysicalPlan sparseWithFallback(NativeGroupResultCursor.GroupingPlan plan,
+			NativePhysicalWorkQuote fallback, String fallbackProperties) {
+		Producer sparse = plan.sparse();
+		Producer composite = new Producer() {
+			@Override
+			public Work quote(RowState row) {
+				Work first = sparse.quote(row);
+				if (first == null || fallback == null) {
+					return null;
+				}
+				NativeAggregateCostQuotes.Input input = first.input();
+				NativeAggregateCostQuotes.Input combined = new NativeAggregateCostQuotes.Input(input.rows(),
+						input.scanned(), input.seeks(), input.expressions(), input.decoded(), input.lowRows(),
+						input.highRows(), input.inherited().plus(fallback.total()),
+						input.workEvidence().combine(fallback.workEvidence().inherited()));
+				return new Work(combined, first.extra(), first.retainedRows(), first.outputProof());
+			}
+
+			@Override
+			public String properties() {
+				return sparse.properties() + ";FIXED_FALLBACK=" + fallbackProperties;
+			}
+
+			@Override
+			public boolean blocksBeforeOutput() {
+				return true;
+			}
+		};
+		return new NativeAggregatePhysicalPlan(plan.input(), plan.sparse().retention(), composite);
 	}
 }

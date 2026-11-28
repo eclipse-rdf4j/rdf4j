@@ -13,8 +13,11 @@
 package org.eclipse.rdf4j.sail.lmdb;
 
 import java.io.IOException;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.eclipse.rdf4j.sail.lmdb.LmdbAdjacencyMemoryAccount.Charge;
 import org.eclipse.rdf4j.sail.lmdb.csf.ImmutablePagedQuadCsfIndex;
@@ -36,6 +39,8 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 
 	static final long NOT_FOUND = -1L;
 	static final long NOT_COVERED = -2L;
+	/** Retained lock, synchronizer and the reference in this base, with aligned object headers. */
+	static final long SYNOPSIS_BUILD_LOCK_BYTES = 128L;
 	static final long SINGLE_PAGE_CONTEXT_MISS = -3L;
 
 	private final long baseRevision;
@@ -51,10 +56,12 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	private final long statementCount;
 	private final long incidenceCount;
 	private final LmdbAdjacencyPlaneStatistics planeStatistics;
+	private final ReentrantLock synopsisBuildLock = new ReentrantLock();
 	private Object[] labelSynopsisStates;
 	private Charge labelSynopsisRoutingCharge;
 	private static final Object LABEL_SYNOPSIS_REFUSED = new Object();
-	private Object[] nodeDomainSynopsisStates;
+	private static final VarHandle SYNOPSIS_STATE = MethodHandles.arrayElementVarHandle(Object[].class);
+	private volatile Object[] nodeDomainSynopsisStates;
 	private Charge nodeDomainSynopsisRoutingCharge;
 	private static final Object NODE_DOMAIN_SYNOPSIS_REFUSED = new Object();
 	private Object[] nodeDomainPresenceStates;
@@ -168,7 +175,17 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	 * Lazily builds one exact fixed-predicate label-pattern synopsis under a cumulative retained-base-sized memory cap.
 	 * Both a refused build and an ineligible sparse domain are memoized, so a hot query never repeats construction.
 	 */
-	synchronized LmdbPredicateLabelSynopsis labelSynopsis(long predicateOrdinal, int plane,
+	LmdbPredicateLabelSynopsis labelSynopsis(long predicateOrdinal, int plane,
+			LmdbAdjacencyMemoryAccount account) {
+		synopsisBuildLock.lock();
+		try {
+			return labelSynopsisLocked(predicateOrdinal, plane, account);
+		} finally {
+			synopsisBuildLock.unlock();
+		}
+	}
+
+	private LmdbPredicateLabelSynopsis labelSynopsisLocked(long predicateOrdinal, int plane,
 			LmdbAdjacencyMemoryAccount account) {
 		if (predicateOrdinal < 0 || predicateOrdinal >= predicateCatalog.size()
 				|| plane < 0 || plane >= ImmutablePagedQuadCsfIndex.PLANE_COUNT) {
@@ -219,7 +236,21 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 	 * multiplicities are retained; neighbor and context columns are never decoded. Refusal is memoized and leaves the
 	 * streaming root-domain merge available as the exact fallback.
 	 */
-	synchronized LmdbNodeDomainSynopsis nodeDomainSynopsis(int plane, LmdbAdjacencyMemoryAccount account) {
+	LmdbNodeDomainSynopsis nodeDomainSynopsis(int plane, LmdbAdjacencyMemoryAccount account) {
+		synopsisBuildLock.lock();
+		try {
+			return nodeDomainSynopsisLocked(plane, account);
+		} finally {
+			synopsisBuildLock.unlock();
+		}
+	}
+
+	private LmdbNodeDomainSynopsis nodeDomainSynopsisLocked(int plane, LmdbAdjacencyMemoryAccount account) {
+		return nodeDomainSynopsisLocked(plane, account, null);
+	}
+
+	private LmdbNodeDomainSynopsis nodeDomainSynopsisLocked(int plane, LmdbAdjacencyMemoryAccount account,
+			Runnable cancellationPoll) {
 		if (!coverage.isFull() || plane < 0 || plane >= ImmutablePagedQuadCsfIndex.PLANE_COUNT) {
 			return null;
 		}
@@ -235,13 +266,47 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		}
 		long remaining = remainingSynopsisBytes(account);
 		LmdbNodeDomainSynopsis synopsis = remaining <= 0L ? null
-				: LmdbNodeDomainSynopsis.build(this, plane, account, remaining);
-		nodeDomainSynopsisStates[plane] = synopsis == null ? NODE_DOMAIN_SYNOPSIS_REFUSED : synopsis;
+				: cancellationPoll == null ? LmdbNodeDomainSynopsis.build(this, plane, account, remaining)
+						: LmdbNodeDomainSynopsis.build(this, plane, account, remaining, cancellationPoll);
+		if (synopsis != null && cancellationPoll != null) {
+			try {
+				cancellationPoll.run();
+			} catch (RuntimeException | Error failure) {
+				throw LmdbNodeDomainSynopsis.closeAfterFailure(synopsis, failure);
+			}
+		}
+		SYNOPSIS_STATE.setRelease(nodeDomainSynopsisStates, plane,
+				synopsis == null ? NODE_DOMAIN_SYNOPSIS_REFUSED : synopsis);
 		return synopsis;
 	}
 
+	/** Returns an already completed synopsis without waiting for, or initiating, its builder. */
+	private LmdbNodeDomainSynopsis cachedNodeDomainSynopsis(int plane) {
+		Object[] states = nodeDomainSynopsisStates;
+		if (states == null || plane < 0 || plane >= states.length) {
+			return null;
+		}
+		Object state = SYNOPSIS_STATE.getAcquire(states, plane);
+		return state instanceof LmdbNodeDomainSynopsis synopsis ? synopsis : null;
+	}
+
+	/** The base's retained lease must remain held while this borrowed summary is used. */
+	LmdbNodeDomainSynopsis.DatatypeSummary cachedDatatypeSummary(int plane) {
+		LmdbNodeDomainSynopsis synopsis = cachedNodeDomainSynopsis(plane);
+		return synopsis == null ? null : synopsis.cachedDatatypeSummary();
+	}
+
 	/** Lazily builds exact membership without retaining root multiplicities or an enumeration cursor. */
-	synchronized NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresence(int plane,
+	NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresence(int plane, LmdbAdjacencyMemoryAccount account) {
+		synopsisBuildLock.lock();
+		try {
+			return nodeDomainPresenceLocked(plane, account);
+		} finally {
+			synopsisBuildLock.unlock();
+		}
+	}
+
+	private NativeLmdbQuerySource.NodeDomainPresence nodeDomainPresenceLocked(int plane,
 			LmdbAdjacencyMemoryAccount account) {
 		if (!coverage.isFull() || plane < 0 || plane >= ImmutablePagedQuadCsfIndex.PLANE_COUNT) {
 			return null;
@@ -267,15 +332,39 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		return presence;
 	}
 
-	synchronized NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(int plane,
+	NativeLmdbQuerySource.DatatypeSummary nodeDomainDatatypeSummary(int plane,
 			LmdbAdjacencyMemoryAccount account, LmdbNodeDomainSynopsis.LiteralDatatypeLookup lookup,
 			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer) throws IOException {
-		LmdbNodeDomainSynopsis synopsis = nodeDomainSynopsis(plane, account);
-		if (synopsis == null) {
+		synopsisBuildLock.lock();
+		try {
+			LmdbNodeDomainSynopsis synopsis = nodeDomainSynopsisLocked(plane, account);
+			if (synopsis == null) {
+				return null;
+			}
+			long remaining = remainingSynopsisBytes(account);
+			return synopsis.datatypeSummary(lookup, observer, account, remaining);
+		} finally {
+			synopsisBuildLock.unlock();
+		}
+	}
+
+	/** Tries the common builder claim without waiting, including reentrant calls from a builder callback. */
+	NativeLmdbQuerySource.DatatypeSummary tryColdDatatypeSummary(int plane, LmdbAdjacencyMemoryAccount account,
+			LmdbNodeDomainSynopsis.LiteralDatatypeLookup lookup,
+			NativeLmdbQuerySource.DatatypeSummaryBuildObserver observer, Runnable cancellationPoll) throws IOException {
+		cancellationPoll.run();
+		if (synopsisBuildLock.isHeldByCurrentThread() || !synopsisBuildLock.tryLock()) {
 			return null;
 		}
-		long remaining = remainingSynopsisBytes(account);
-		return synopsis.datatypeSummary(lookup, observer, account, remaining);
+		try {
+			cancellationPoll.run();
+			LmdbNodeDomainSynopsis synopsis = nodeDomainSynopsisLocked(plane, account, cancellationPoll);
+			return synopsis == null ? null
+					: synopsis.datatypeSummary(lookup, observer, account, remainingSynopsisBytes(account),
+							cancellationPoll);
+		} finally {
+			synopsisBuildLock.unlock();
+		}
 	}
 
 	private boolean allocateNodeDomainSynopsisRouting(LmdbAdjacencyMemoryAccount account) {
@@ -419,6 +508,15 @@ final class LmdbInMemoryAdjacencyIndex implements AutoCloseable {
 		}
 		long predicateOrdinal = predicateCatalog.ordinalForRaw(rawPredicateId);
 		// a covered predicate with no base ordinal had no statements at the base revision
+		return predicateOrdinal < 0 ? NOT_FOUND : predicateOrdinal;
+	}
+
+	long bindPredicate(long rawPredicateId, Runnable cancellationPoll) {
+		Objects.requireNonNull(cancellationPoll, "cancellationPoll").run();
+		if (!coverage.covers(rawPredicateId)) {
+			return NOT_COVERED;
+		}
+		long predicateOrdinal = predicateCatalog.ordinalForRaw(rawPredicateId, cancellationPoll);
 		return predicateOrdinal < 0 ? NOT_FOUND : predicateOrdinal;
 	}
 

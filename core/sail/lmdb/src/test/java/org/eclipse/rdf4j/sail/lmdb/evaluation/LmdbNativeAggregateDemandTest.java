@@ -187,6 +187,43 @@ class LmdbNativeAggregateDemandTest {
 		}
 	}
 
+	@Test
+	void orderedSubqueryMaterializesBeforeOuterLengthConsumer() {
+		String orderedGrouped = GROUPED.replace("GROUP BY ?s", "GROUP BY ?s ORDER BY ?s");
+		String query = "SELECT (SUM(STRLEN(?forwarded)) AS ?total) WHERE { "
+				+ "{ SELECT (?cat AS ?renamed) WHERE { " + orderedGrouped + " } } "
+				+ "BIND(?renamed AS ?forwarded) }";
+		List<BindingSet> expected = evaluate(query, false);
+		assertThat(expected).hasSize(1);
+		assertThat(((Literal) expected.get(0).getValue("total")).longValue()).isEqualTo(11L);
+		assertThat(evaluate(query, true)).containsExactlyElementsOf(expected);
+		assertThat(explain(query)).contains("FULL_VALUE").doesNotContain("LEXICAL_LENGTH");
+	}
+
+	@Test
+	void slicedSubqueryMaterializesBeforeOuterLengthConsumer() {
+		String query = "SELECT (SUM(STRLEN(?forwarded)) AS ?total) WHERE { "
+				+ "{ SELECT (?cat AS ?renamed) WHERE { " + GROUPED + " } LIMIT 2 } "
+				+ "BIND(?renamed AS ?forwarded) }";
+		List<BindingSet> expected = evaluate(query, false);
+		assertThat(expected).hasSize(1);
+		assertThat(((Literal) expected.get(0).getValue("total")).longValue()).isEqualTo(11L);
+		assertThat(evaluate(query, true)).containsExactlyElementsOf(expected);
+		String plan = explain(query);
+		assertThat(plan).contains("FULL_VALUE").doesNotContain("LEXICAL_LENGTH");
+	}
+
+	@Test
+	void scopedHavingAndOuterLengthRequireMaterializedGroupConcat() {
+		String scopedHavingGrouped = GROUPED.replace("GROUP BY ?s", "GROUP BY ?s HAVING (NOW() = NOW())");
+		String query = "SELECT (SUM(STRLEN(?cat)) AS ?total) WHERE { " + scopedHavingGrouped + " }";
+		List<BindingSet> expected = evaluate(query, false);
+		assertThat(expected).hasSize(1);
+		assertThat(((Literal) expected.get(0).getValue("total")).longValue()).isEqualTo(11L);
+		assertThat(evaluate(query, true)).containsExactlyElementsOf(expected);
+		assertThat(explain(query)).contains("NativeHaving").contains("FULL_VALUE").doesNotContain("LEXICAL_LENGTH");
+	}
+
 	@ParameterizedTest
 	@ValueSource(strings = { "irAggregateInterpreted", "irAggregateParallelInterpreted" })
 	void physicalLengthConsumerCannotSilentlyIgnoreItsForcedRoute(String strategy) {
@@ -370,11 +407,17 @@ class LmdbNativeAggregateDemandTest {
 			while (candidates.find()) {
 				legal.add(candidates.group(1));
 			}
-			// the sequential group path publishes its physical group representation as its execution path; the
-			// quote inventory lists the strategy that owns that representation
-			String route = sequentialRepresentation(actual) ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP : actual;
-			assertThat(legal).as("the physical group route %s must belong to its common legal inventory", actual)
-					.contains(route);
+			// The execution metric can report a composite physical path. Validate every complete component against the
+			// offered inventory; sequential group-table representations name their owning nested-loop strategy.
+			String[] paths = actual.split(Pattern.quote(" | "), -1);
+			assertThat(paths).as("each physical group must report a non-empty execution path").isNotEmpty();
+			for (String path : paths) {
+				assertThat(path).as("each physical group execution path component must be non-empty").isNotEmpty();
+				String route = sequentialRepresentation(path) ? LmdbNativeAttemptMetrics.PATH_NESTED_LOOP : path;
+				assertThat(legal)
+						.as("physical group route component %s must belong to its common legal inventory", path)
+						.contains(route);
+			}
 		}
 		if (node.getPlans() != null) {
 			for (GenericPlanNode child : node.getPlans()) {

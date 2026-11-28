@@ -170,6 +170,10 @@ final class NativePhysicalOutputEvidence {
 		return true;
 	}
 
+	boolean matchesEntry(BindingSet actual) {
+		return sameEntry(receipt.bindings, actual);
+	}
+
 	boolean matchesGrouping(SlotPlan input, int[] groups, AggregateSpec[] aggregates, NativeSlotLayout layout,
 			NativeLmdbQuerySource source, BindingSet bindings) {
 		if (!validFor(source) || !sameEntry(receipt.bindings, bindings)
@@ -204,6 +208,12 @@ final class NativePhysicalOutputEvidence {
 		return receipt.backingSpace == backingSpace(source)
 				&& (receipt.snapshot == ParallelSource.UNKNOWN_SNAPSHOT_ID
 						|| actualSnapshot != ParallelSource.UNKNOWN_SNAPSHOT_ID && actualSnapshot == receipt.snapshot);
+	}
+
+	/** Sparse receipts retain store IDs and immutable plane statistics from one proven snapshot. */
+	boolean sparseWorkerSourceMatches(NativeLmdbQuerySource source) {
+		return receipt.snapshot != ParallelSource.UNKNOWN_SNAPSHOT_ID && receipt.idSpace == source.idSpace()
+				&& sourceFamilyMatches(source);
 	}
 
 	/** A scope proof permits preparing fresh term authorities; it never permits copying their raw runtime IDs. */

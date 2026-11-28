@@ -21,6 +21,7 @@ import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.function.UnaryOperator;
 
 import org.eclipse.rdf4j.common.annotation.Experimental;
 import org.eclipse.rdf4j.common.iteration.CloseableIteration;
@@ -48,6 +49,7 @@ import org.eclipse.rdf4j.query.algebra.evaluation.function.OrderByHint;
 import org.eclipse.rdf4j.query.algebra.evaluation.impl.QueryEvaluationContext;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.QueryEvaluationUtility;
 import org.eclipse.rdf4j.query.algebra.evaluation.util.ValueComparator;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.codegen.KernelRuntime;
 
 /**
  * Semantic native solution-modifier pipeline for wrapper stacks that cannot be flattened into one slot-row root. Stages
@@ -110,7 +112,8 @@ final class NativeRootPipeline {
 		if (step == null) {
 			step = planner.compileRowRoot(node);
 		}
-		if (step == null || planner.slotNames.size() > LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS) {
+		if (step == null || requiresPhysicalResults(step)
+				|| planner.slotNames.size() > LmdbNativeAggregateCompiler.MAX_NATIVE_SLOTS) {
 			return null;
 		}
 
@@ -118,6 +121,9 @@ final class NativeRootPipeline {
 		boolean strict = strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT;
 		boolean topK = false;
 		for (int i = wrappers.size() - 1; i >= 0; i--) {
+			if (requiresPhysicalResults(step)) {
+				return null;
+			}
 			TupleExpr wrapper = wrappers.get(i);
 			String description;
 			if (wrapper instanceof Slice slice) {
@@ -169,10 +175,17 @@ final class NativeRootPipeline {
 
 	static QueryEvaluationStep order(QueryEvaluationStep arg, Order order, LmdbNativeEvaluationStrategy strategy,
 			QueryEvaluationContext context) {
+		if (requiresPhysicalResults(arg)) {
+			return null;
+		}
 		OrderKey[] keys = compileOrderKeys(order, strategy, context);
 		return keys == null ? null
 				: new NativeOrderStep(arg, keys, strategy.getQueryEvaluationMode() == QueryEvaluationMode.STRICT,
 						strategy.getQueryExecutionPolicy());
+	}
+
+	private static boolean requiresPhysicalResults(QueryEvaluationStep step) {
+		return step instanceof NativeResultStep nativeStep && nativeStep.requiresPhysicalResults();
 	}
 
 	private static OrderKey[] compileOrderKeys(Order order, LmdbNativeEvaluationStrategy strategy,
@@ -194,7 +207,27 @@ final class NativeRootPipeline {
 		return keys;
 	}
 
-	static final class PipelineStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	/**
+	 * Apply an ordinary RDF modifier only when its child has no unmaterialized physical cells.
+	 */
+	static NativeResultCursor relation(QueryEvaluationStep arg, BindingSet bindings,
+			UnaryOperator<CloseableIteration<BindingSet>> modifier) {
+		if (requiresPhysicalResults(arg)) {
+			throw new IllegalStateException("RDF solution modifier child requires physical results");
+		}
+		NativeResultCursor child = NativeResultSteps.openRelation(arg, bindings);
+		CloseableIteration<BindingSet> rows = NativeResultSteps.rdf(child);
+		CloseableIteration<BindingSet> result;
+		try {
+			result = modifier.apply(rows);
+		} catch (Throwable failure) {
+			NativeContextClosingIteration.throwFailure(KernelRuntime.closeResource(rows, failure));
+			throw new AssertionError("unreachable");
+		}
+		return NativeResultSteps.open(ignored -> result, bindings);
+	}
+
+	static final class PipelineStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep staged;
 		private final String physicalPlan;
 
@@ -209,6 +242,21 @@ final class NativeRootPipeline {
 		}
 
 		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			return NativeResultSteps.openRelation(staged, bindings);
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return NativeRootPipeline.requiresPhysicalResults(staged);
+		}
+
+		@Override
 		public void explainStrategies() {
 			LmdbNativeStrategyPreview.inspect(staged);
 		}
@@ -220,7 +268,7 @@ final class NativeRootPipeline {
 	}
 
 	/** ORDER BY fused with its bounded LIMIT: a heap of the retained rows replaces staging the complete input. */
-	private static final class NativeTopKStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeTopKStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 		private final OrderKey[] keys;
 		private final boolean strict;
@@ -247,6 +295,24 @@ final class NativeRootPipeline {
 			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
 			return new TopKIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate), policy,
 					offset, limit, retained);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			LmdbNativeDispatchLoop.logDirect(null, "ORDER BY dispatch", LmdbNativeAttemptMetrics.PATH_ORDERED_TOP_K,
+					"Bounded top-K over the staged input");
+			return relation(arg, bindings, delegate -> new TopKIteration(delegate, keys, strict,
+					NativeExecutionContextCarrier.contextOf(delegate), policy, offset, limit, retained));
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return NativeRootPipeline.requiresPhysicalResults(arg);
 		}
 
 		@Override
@@ -440,7 +506,7 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private static final class NativeSliceStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeSliceStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 		private final long offset;
 		private final long limit;
@@ -455,6 +521,22 @@ final class NativeRootPipeline {
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
 			return new SliceIteration(delegate, offset, limit, NativeExecutionContextCarrier.contextOf(delegate));
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			return relation(arg, bindings, delegate -> new SliceIteration(delegate, offset, limit,
+					NativeExecutionContextCarrier.contextOf(delegate)));
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return NativeRootPipeline.requiresPhysicalResults(arg);
 		}
 
 		@Override
@@ -568,7 +650,7 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private static final class NativeDistinctStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeDistinctStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 
 		private NativeDistinctStep(QueryEvaluationStep arg) {
@@ -579,6 +661,22 @@ final class NativeRootPipeline {
 		public CloseableIteration<BindingSet> evaluate(BindingSet bindings) {
 			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
 			return new DistinctIteration(delegate, NativeExecutionContextCarrier.contextOf(delegate));
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			return relation(arg, bindings, delegate -> new DistinctIteration(delegate,
+					NativeExecutionContextCarrier.contextOf(delegate)));
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return NativeRootPipeline.requiresPhysicalResults(arg);
 		}
 
 		@Override
@@ -672,7 +770,7 @@ final class NativeRootPipeline {
 		}
 	}
 
-	private static final class NativeOrderStep implements QueryEvaluationStep, LmdbNativePhysicalPlan {
+	private static final class NativeOrderStep implements NativeResultStep, LmdbNativePhysicalPlan {
 		private final QueryEvaluationStep arg;
 		private final OrderKey[] keys;
 		private final boolean strict;
@@ -692,6 +790,24 @@ final class NativeRootPipeline {
 			CloseableIteration<BindingSet> delegate = arg.evaluate(bindings);
 			return new OrderIteration(delegate, keys, strict, NativeExecutionContextCarrier.contextOf(delegate),
 					policy);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNative(BindingSet bindings) {
+			return NativeResultSteps.open(ignored -> evaluate(bindings), bindings);
+		}
+
+		@Override
+		public NativeResultCursor evaluateNativeRelation(BindingSet bindings) {
+			LmdbNativeDispatchLoop.logDirect(null, "ORDER BY dispatch",
+					LmdbNativeAttemptMetrics.PATH_ORDERED_FULL_SORT, "Sort the complete staged input");
+			return relation(arg, bindings, delegate -> new OrderIteration(delegate, keys, strict,
+					NativeExecutionContextCarrier.contextOf(delegate), policy));
+		}
+
+		@Override
+		public boolean requiresPhysicalResults() {
+			return NativeRootPipeline.requiresPhysicalResults(arg);
 		}
 
 		@Override

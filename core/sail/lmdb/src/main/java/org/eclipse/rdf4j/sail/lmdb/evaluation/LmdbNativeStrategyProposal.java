@@ -66,6 +66,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	private int mappedWorkers;
 	private LmdbNativeCostQuote costQuote;
 	private Set<String> dominates = Set.of();
+	private LmdbNativeCandidate.KernelSibling kernelSibling;
 
 	/** Changes only the result carrier; the original opener, quote, dominance and unopened release remain owned. */
 	<R> LmdbNativeStrategyProposal<R> map(Function<? super T, ? extends R> mapper, String mappedTag) {
@@ -91,6 +92,7 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 		result.costQuote = costQuote;
 		result.parallelShape = parallelShape;
 		result.dominates = dominates;
+		result.kernelSibling = kernelSibling;
 		result.mappedWorkers = parallelWorkers();
 		return result;
 	}
@@ -145,6 +147,23 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 
 	Set<String> dominates() {
 		return dominates;
+	}
+
+	/** Identifies independently admitted execution tiers of the same frozen kernel recipe. */
+	LmdbNativeStrategyProposal<T> withKernelSibling(LmdbNativeCandidate.KernelSibling sibling) {
+		if (opened || closed || kernelSibling != null) {
+			throw new IllegalStateException("A kernel sibling belongs to one unopened proposal");
+		}
+		kernelSibling = Objects.requireNonNull(sibling);
+		return this;
+	}
+
+	LmdbNativeStrategyProposal<T> withOptionalKernelSibling(LmdbNativeCandidate.KernelSibling sibling) {
+		return sibling == null ? this : withKernelSibling(sibling);
+	}
+
+	LmdbNativeCandidate.KernelSibling kernelSibling() {
+		return kernelSibling;
 	}
 
 	/**
@@ -427,7 +446,10 @@ final class LmdbNativeStrategyProposal<T> implements AutoCloseable {
 	/** Bridges one proposal; an interval without a finite ceiling is priced at {@code estimate} when one is known. */
 	static <T> LmdbNativeCandidate<T> candidate(LmdbNativeStrategyProposal<T> proposal, LmdbNativeWork estimate) {
 		LmdbNativeCandidate<T> candidate = LmdbNativeCandidate.of(proposal.tag, quote(proposal, estimate),
-				proposal::open, proposal::close);
+				proposal::open, proposal::close).withKernelSibling(proposal.kernelSibling);
+		if (proposal.physicalQuote != null && !proposal.physicalQuote.workEvidence().isComplete()) {
+			candidate = candidate.withMissingPhysicalWork(proposal.physicalQuote.workEvidence().missingProof());
+		}
 		return proposal.dominates().isEmpty() ? candidate : candidate.dominating(proposal.dominates());
 	}
 

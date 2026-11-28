@@ -1614,7 +1614,8 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, tag,
 					context -> staticDecline != null ? LmdbNativeAdmission.declined(staticDecline)
 							: LmdbNativeAdmission.of(LmdbNativeCandidate.of(tag, quote,
-									() -> tryEvaluateOrderedKernel(row, values, false, wildcard)))));
+									() -> tryEvaluateOrderedKernel(row, values, false, wildcard))
+									.withKernelSibling(orderedKernelSibling(wildcard, false)))));
 		}
 		if (LmdbNativeKernelInterpreter.enabled()) {
 			String tag = wildcard ? LmdbNativeAttemptMetrics.PATH_IR_KERNEL_WILDCARD_INTERPRETED
@@ -1622,8 +1623,14 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			strategies.add(LmdbNativeStrategy.of(LmdbNativeDecisionPoint.ORDER, tag,
 					context -> staticDecline != null ? LmdbNativeAdmission.declined(staticDecline)
 							: LmdbNativeAdmission.of(LmdbNativeCandidate.of(tag, quote,
-									() -> tryEvaluateOrderedKernel(row, values, true, wildcard)))));
+									() -> tryEvaluateOrderedKernel(row, values, true, wildcard))
+									.withKernelSibling(orderedKernelSibling(wildcard, true)))));
 		}
+	}
+
+	private LmdbNativeCandidate.KernelSibling orderedKernelSibling(boolean wildcard, boolean interpreted) {
+		return new LmdbNativeCandidate.KernelSibling(LmdbNativeCandidate.KernelFamily.ORDERED_ROW, this, wildcard, 1,
+				interpreted ? LmdbNativeCandidate.KernelTier.INTERPRETED : LmdbNativeCandidate.KernelTier.COMPILED);
 	}
 
 	/**
@@ -2213,6 +2220,7 @@ final class NativeRowsStep implements NativeResultStep, LmdbNativePhysicalPlan {
 			}
 		}, proposal.work, proposal.startupWork, proposal.estRows, proposal.tag, proposal::close)
 				.withOptionalPlanningWork(proposal.planningWork())
+				.withOptionalKernelSibling(proposal.kernelSibling())
 				.withCostQuote(proposal.costQuote() != null ? proposal.costQuote()
 						: cursorQuote(proposal.tag, row, proposal.parallelWorkers()))
 				.withDominates(proposal.dominates()),
