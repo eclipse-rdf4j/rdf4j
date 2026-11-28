@@ -488,13 +488,13 @@ class SyntheticValueSource implements NativeLmdbQuerySource {
 		if (context != null) {
 			Value interned = context.valueOf(id);
 			if (interned != null) {
-				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 				return interned;
 			}
 		}
 		Value planConstant = catalog.valueOf(id);
 		if (planConstant != null) {
-			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 			return planConstant;
 		}
 		return explicitScope ? delegate.lazyValue(id, positionMask, valueScope) : delegate.lazyValue(id, positionMask);

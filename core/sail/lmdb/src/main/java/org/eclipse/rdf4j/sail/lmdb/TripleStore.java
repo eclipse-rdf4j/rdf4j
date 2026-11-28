@@ -283,6 +283,8 @@ class TripleStore implements Closeable {
 		final List<TripleIndex> indexes;
 		final TripleIndex[] best = new TripleIndex[16];
 		final boolean[] range = new boolean[16];
+		/** Prefix masks per statement order and binding mask; a function of the indexes alone, computed once. */
+		private volatile int[][] accessPrefixes;
 
 		IndexGeneration(List<TripleIndex> indexes) {
 			this.indexes = List.copyOf(indexes);
@@ -3711,41 +3713,52 @@ class TripleStore implements Closeable {
 	NativeLmdbQuerySource.IndexAccessProfile indexAccessProfile(Txn txn, boolean explicit, boolean adjacencyPossible,
 			long adjacencyPredicateWork, long outgoingAdjacencyWork, long incomingAdjacencyWork) {
 		return selectGeneration(txn, generation -> {
-			int[][] prefixes = new int[StatementOrder.values().length + 1][16];
-			for (int orderIndex = 0; orderIndex < prefixes.length; orderIndex++) {
-				StatementOrder order = orderIndex == 0 ? null : StatementOrder.values()[orderIndex - 1];
-				for (int mask = 0; mask < 16; mask++) {
-					long subj = (mask & 1) != 0 ? 1L : -1L;
-					long pred = (mask & 2) != 0 ? 1L : -1L;
-					long obj = (mask & 4) != 0 ? 1L : -1L;
-					long context = (mask & 8) != 0 ? 1L : -1L;
-					TripleIndex index = order == null ? generation.best[mask]
-							: TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
-									context);
-					if (index == null) {
-						prefixes[orderIndex][mask] = -1;
-						continue;
-					}
-					int prefix = 0;
-					for (char field : index.getFieldSeq()) {
-						int bit = switch (field) {
-						case 's' -> 1;
-						case 'p' -> 2;
-						case 'o' -> 4;
-						case 'c' -> 8;
-						default -> throw new IllegalStateException("Unknown index field " + field);
-						};
-						if ((mask & bit) == 0) {
-							break;
-						}
-						prefix |= bit;
-					}
-					prefixes[orderIndex][mask] = prefix;
-				}
+			int[][] prefixes = generation.accessPrefixes;
+			if (prefixes == null) {
+				// The profile copies the table, so every query shares this one.
+				prefixes = accessPrefixes(generation);
+				generation.accessPrefixes = prefixes;
 			}
 			return new NativeLmdbQuerySource.IndexAccessProfile(statTripleCount(txn, explicit), 1, prefixes,
 					adjacencyPossible, adjacencyPredicateWork, outgoingAdjacencyWork, incomingAdjacencyWork);
 		});
+	}
+
+	private static int[][] accessPrefixes(IndexGeneration generation) {
+		StatementOrder[] orders = StatementOrder.values();
+		int[][] prefixes = new int[orders.length + 1][16];
+		for (int orderIndex = 0; orderIndex < prefixes.length; orderIndex++) {
+			StatementOrder order = orderIndex == 0 ? null : orders[orderIndex - 1];
+			for (int mask = 0; mask < 16; mask++) {
+				long subj = (mask & 1) != 0 ? 1L : -1L;
+				long pred = (mask & 2) != 0 ? 1L : -1L;
+				long obj = (mask & 4) != 0 ? 1L : -1L;
+				long context = (mask & 8) != 0 ? 1L : -1L;
+				TripleIndex index = order == null ? generation.best[mask]
+						: TripleIndex.getBestCompatibleOrderedIndex(generation.indexes, order, subj, pred, obj,
+								context);
+				if (index == null) {
+					prefixes[orderIndex][mask] = -1;
+					continue;
+				}
+				int prefix = 0;
+				for (char field : index.getFieldSeq()) {
+					int bit = switch (field) {
+					case 's' -> 1;
+					case 'p' -> 2;
+					case 'o' -> 4;
+					case 'c' -> 8;
+					default -> throw new IllegalStateException("Unknown index field " + field);
+					};
+					if ((mask & bit) == 0) {
+						break;
+					}
+					prefix |= bit;
+				}
+				prefixes[orderIndex][mask] = prefix;
+			}
+		}
+		return prefixes;
 	}
 
 	private static String orderedIndexName(IndexGeneration generation, StatementOrder order, long subj, long pred,

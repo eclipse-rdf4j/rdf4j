@@ -22,6 +22,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.OptionalLong;
 
+import org.eclipse.rdf4j.model.Value;
 import org.eclipse.rdf4j.model.impl.SimpleValueFactory;
 import org.eclipse.rdf4j.query.BindingSet;
 import org.eclipse.rdf4j.query.QueryEvaluationException;
@@ -507,7 +508,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 						rows = Math.addExact(rows, runRows);
 						distinctNeighbors++;
 						if (groups != null && groupField == neighborField) {
-							groups.add(binding(owner, neighbor, new Counts(runRows, 1L, 1L, 1L)));
+							groups.add(row(owner, neighbor, new Counts(runRows, 1L, 1L, 1L)));
 						}
 					}
 				}
@@ -517,7 +518,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 					: new Counts(rows, distinctNeighbors, rows > 0L ? 1L : 0L, rows > 0L ? 1L : 0L);
 			if (groups != null) {
 				if (groupField == rootField && rows > 0L) {
-					groups.add(binding(owner, fixedRoot, counts));
+					groups.add(row(owner, fixedRoot, counts));
 				}
 				return groups.finish();
 			}
@@ -569,7 +570,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			while (cursor.next()) {
 				long root = cursor.prefixValue(rootField);
 				if (currentRoot != UNKNOWN && root != currentRoot) {
-					results.add(binding(owner, currentRoot,
+					results.add(row(owner, currentRoot,
 							groupCounts(rows, currentRoot, fixedPredicate, distinctNeighbors)));
 					rows = 0L;
 					distinctNeighbors = 0L;
@@ -586,7 +587,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 				}
 			}
 			if (currentRoot != UNKNOWN) {
-				results.add(binding(owner, currentRoot,
+				results.add(row(owner, currentRoot,
 						groupCounts(rows, currentRoot, fixedPredicate, distinctNeighbors)));
 			}
 			return results.finish();
@@ -620,7 +621,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 							return null;
 						}
 						if (counts.rows > 0L) {
-							results.add(binding(owner, catalog.predicates[i], counts));
+							results.add(row(owner, catalog.predicates[i], counts));
 						}
 					}
 					return results.finish();
@@ -743,7 +744,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 					Counts counts = outgoing
 							? new Counts(rows, 1L, distinctPredicates, distinctNeighbors)
 							: new Counts(rows, distinctNeighbors, distinctPredicates, 1L);
-					results.add(binding(owner, currentRoot, counts));
+					results.add(row(owner, currentRoot, counts));
 					rows = 0L;
 					distinctNeighbors = 0L;
 					distinctPredicates = 0L;
@@ -757,7 +758,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			if (currentRoot != UNKNOWN) {
 				Counts counts = outgoing ? new Counts(rows, 1L, distinctPredicates, distinctNeighbors)
 						: new Counts(rows, distinctNeighbors, distinctPredicates, 1L);
-				results.add(binding(owner, currentRoot, counts));
+				results.add(row(owner, currentRoot, counts));
 			}
 			return results.finish();
 		}
@@ -789,7 +790,7 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			while (merge.hasNext()) {
 				long neighbor = merge.neighbor();
 				long rows = merge.rows();
-				results.add(binding(owner, neighbor,
+				results.add(row(owner, neighbor,
 						new Counts(rows, 1L, merge.predicatesAtKey(), 1L)));
 				merge.advance();
 			}
@@ -1011,6 +1012,33 @@ final class LmdbAdjacencyAggregatePlan implements NativeAggregatePhysicalPlan.Pr
 			}
 			return distinct;
 		}
+	}
+
+	/**
+	 * The physical row {@code NativeResultRow.fromBindingSet(owner.physicalSchema(), binding(owner, groupId, counts))}
+	 * yields, built without the intermediate binding set: the group term and the counts are placed straight into the
+	 * cells of their names, a later count replacing an earlier one of the same name.
+	 */
+	private NativeResultRow row(NativeGroupIteration owner, long groupId, Counts counts) {
+		NativeResultRow.Schema schema = owner.physicalSchema();
+		NativeResultCell[] cells = new NativeResultCell[schema.size()];
+		Arrays.fill(cells, NativeResultCell.unbound());
+		if (groupSlot >= 0 && groupId != UNKNOWN && groupId != NULL_CONTEXT_ID) {
+			Value group = owner.source.lazyValue(groupId, owner.layout.positionMask(groupSlot));
+			int index = schema.index(owner.slotNames[groupSlot]);
+			if (index >= 0 && group != null) {
+				cells[index] = NativeResultCell.term(group);
+			}
+		}
+		for (CountChannel channel : channels) {
+			long count = channel.distinct ? counts.distinct(channel.field) : counts.rows;
+			Value literal = SimpleValueFactory.getInstance().createLiteral(BigInteger.valueOf(count));
+			int index = schema.index(channel.name);
+			if (index >= 0) {
+				cells[index] = NativeResultCell.term(literal);
+			}
+		}
+		return new NativeResultRow(schema, cells);
 	}
 
 	private BindingSet binding(NativeGroupIteration owner, long groupId, Counts counts) {

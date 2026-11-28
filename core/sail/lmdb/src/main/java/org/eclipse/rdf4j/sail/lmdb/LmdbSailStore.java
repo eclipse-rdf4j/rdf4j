@@ -4254,7 +4254,7 @@ class LmdbSailStore implements SailStore {
 	private long storeTxnGeneration;
 
 	/** Serializes snapshot admission and publication of committed backing-store generations. */
-	private final ReentrantLock publicationGate = new ReentrantLock();
+	private final ReentrantLock publicationGate = new SpinningReentrantLock();
 	private final Condition publicationCompleted = publicationGate.newCondition();
 	private int activePublications;
 	private volatile boolean publicationFinalizing;
@@ -6656,6 +6656,15 @@ class LmdbSailStore implements SailStore {
 
 	private long awaitStablePublication() throws SailException {
 		ensureNamespacePersistenceCertain();
+		// The version is odd from the moment the first publication begins until the last one has been finalized, and
+		// it and the pending checkpoint are volatile. A reader that finds no publication and no checkpoint has
+		// nothing to wait for, and takes no gate to learn that: its caller checks the version it returns, and the
+		// rest of this state, again under the gate before it starts a snapshot.
+		long stable = publicationVersion;
+		if ((stable & 1L) == 0L && pendingDictionaryCheckpointGeneration == 0L) {
+			checkPublicationAdmission();
+			return stable;
+		}
 		publicationGate.lock();
 		try {
 			checkPublicationAdmission();
@@ -13992,7 +14001,7 @@ class LmdbSailStore implements SailStore {
 			return null;
 		}
 		try {
-			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 			ValueStore.ReadSnapshot snapshot = readView.valueSnapshot();
 			return explicitScope ? valueStore.getLazyValue(snapshot, id, positionMask, valueScope)
 					: valueStore.getLazyValue(snapshot, id, positionMask);

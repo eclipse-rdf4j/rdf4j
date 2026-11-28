@@ -1201,7 +1201,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 	private volatile ValueIdentity valueIdentity;
 	private NativeValueAssociation nativeValueAssociation;
 	private PendingValueAssociation pendingValueAssociation;
-	private final ReentrantLock associationGate = new ReentrantLock();
+	private final ReentrantLock associationGate = new SpinningReentrantLock();
 	private long writerFirstAppendedId;
 	private final Set<Long> writerReusedIds = new HashSet<>();
 	private volatile ValueStoreRevision.Lazy lazyRevision;
@@ -7582,13 +7582,15 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 		ValueStoreRevision completed = completedRevision(valueRevision);
 		ValueCacheEpoch caches = valueCaches;
 		Class<?> type = value.getClass();
-		if (caches.revision == completed && type != LmdbIRI.class && type != LmdbBNode.class
-				&& type != LmdbLiteral.class) {
+		if (caches.revision == completed && (type != LmdbIRI.class && type != LmdbBNode.class
+				&& type != LmdbLiteral.class || value.getInternalID() != id)) {
 			// Within one dictionary epoch an ID's payload is immutable: publish it so the next shell for this ID
 			// copies the decoded fields instead of repeating the native read. The cached model is bound to the
 			// completed revision, never to the caller's lazy revision, whose collection releases retired IDs.
-			// A plain model needs no copy: it publishes itself, payload included, as soon as it reports that it is
-			// initialized (see cacheValue), which is the same final cache state.
+			// A plain model of this ID needs no copy: it publishes itself, payload included, as soon as it reports
+			// that it is initialized (see cacheValue), which is the same final cache state. A plain model that does
+			// not carry this ID is a decode target, such as the one a prepared query value fills; it is never
+			// published, so without the copy every query would read the dictionary again for the same ID.
 			LmdbValue decoded = data2value(id, data, null, valueRevision);
 			cacheDecodedPayload(id, decoded, valueRevision);
 			value.setFromInitializedValue(decoded);
@@ -11896,7 +11898,7 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			}
 			ValuePosition.validateMask(positionMask);
 			try {
-				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+				LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 				return getLazyValue(id, stablePositionedRevision(positionMask), false, scope);
 			} catch (IOException failure) {
 				throw new QueryEvaluationException(failure);
@@ -11945,9 +11947,23 @@ public class ValueStore extends AbstractValueFactory implements BNodeIdResolver,
 			if (type == null) {
 				return null;
 			}
-			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.incrementAndGet();
+			LmdbNativeExpressionCompiler.LAZY_VALUE_CALLS.increment();
 			ValueStoreRevision revision = scopedRevision(stablePositionedRevision(positionMask), scope);
-			return PreparedLmdbValue.create(new PreparedLmdbValue.State(repositoryProjectionOwner(), type,
+			PreparedLmdbValue.Owner owner = repositoryProjectionOwner();
+			if (type != Value.Type.TripleTerm && reusableAssociation(revision)) {
+				// The payload of an ID is immutable within a dictionary epoch. A decoded model of it in the value
+				// cache is what the deferred decode of this value would copy, so the copy is taken here and the
+				// value needs no decode pass of its own.
+				LmdbValue cached = cachedValue(id, revision);
+				if (cached != null) {
+					PreparedLmdbValue.Prepared ready = PreparedLmdbValue.ready(owner, type,
+							new LmdbValue.InternalIdentity(id, ValueStore.completedRevision(revision)), cached);
+					if (ready != null) {
+						return ready;
+					}
+				}
+			}
+			return PreparedLmdbValue.create(new PreparedLmdbValue.State(owner, type,
 					new LmdbValue.InternalIdentity(id, revision), null));
 		}
 

@@ -81,6 +81,7 @@ import org.eclipse.rdf4j.sail.helpers.DefaultSailChangedEvent;
 import org.eclipse.rdf4j.sail.helpers.SlowQueryContextHolder;
 import org.eclipse.rdf4j.sail.helpers.SlowQuerySupport;
 import org.eclipse.rdf4j.sail.lmdb.RepositoryValueIteration.SourcePull;
+import org.eclipse.rdf4j.sail.lmdb.evaluation.LmdbNativeEvaluationStrategy;
 import org.eclipse.rdf4j.sail.lmdb.evaluation.NativeProjectedBindingSet;
 import org.eclipse.rdf4j.sail.lmdb.model.LmdbValue;
 
@@ -1115,8 +1116,8 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 
 	@Override
 	protected final boolean allowsBufferedQueryResult(EvaluationStrategy strategy) {
-		return getClass() == LmdbStoreConnection.class && strategy.getClass() == LmdbEvaluationStrategy.class
-				&& !isActive();
+		return getClass() == LmdbStoreConnection.class && (strategy.getClass() == LmdbEvaluationStrategy.class
+				|| strategy.getClass() == LmdbNativeEvaluationStrategy.class) && !isActive();
 	}
 
 	private CloseableIteration<? extends BindingSet> openEvaluation(TupleExpr expression, Dataset dataset,
@@ -1130,6 +1131,11 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		private final IntSupplier bufferedRows;
 		private final NativeProjectedBindingSet.CaptureScratch scratch = new NativeProjectedBindingSet.CaptureScratch();
 		private volatile boolean nativeProjection = true;
+		/**
+		 * The repository iteration that is pulling the current row in one read activation, or null. Only the pulling
+		 * thread writes and reads it; see {@link ReplayableIteration#pullRepositoryRow()}.
+		 */
+		private RepositoryValueIteration<?> directPull;
 
 		private QueryValueCaptureIteration(CloseableIteration<? extends BindingSet> source,
 				ValueResolutionScope valueScope) {
@@ -1142,7 +1148,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		public BindingSet next() {
 			BindingSet row = super.next();
 			if (row instanceof NativeProjectedBindingSet nativeRow) {
-				if (RepositoryValueIteration.capturesRepositoryProjection(this)) {
+				RepositoryValueIteration<?> direct = directPull;
+				if (direct != null && !direct.isClosed()
+						|| RepositoryValueIteration.capturesRepositoryProjection(this)) {
 					nativeRow.captureRepositoryAndDetach(valueScope, scratch);
 				} else {
 					nativeProjection = true;
@@ -4092,8 +4100,9 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 		 * One row for the repository iteration bound to this result, in one observed read activation and one call:
 		 * availability, the row, and the rows its producer has already fetched. This is what {@link #hasNext()}
 		 * followed by {@link #next()} do for a repository pull, without handing the activation from one call to the
-		 * other through the pulling thread's state. A result that is not observed and sealed yet, one that projects
-		 * native rows, and a pull nested in another read of this connection use those two calls.
+		 * other through the pulling thread's state. A result that is not observed and sealed yet and a pull nested in
+		 * another read of this connection use those two calls. A result that projects native rows names the pulling
+		 * repository iteration to its capture for the one row it takes, as the two calls do through the source pull.
 		 */
 		@Override
 		public Object pullRepositoryRow() {
@@ -4103,8 +4112,16 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 			}
 			QueryValueCaptureIteration capture = queryCapture;
 			if (repositoryPullActive || !observed || operationAttempt == null || !operationAttempt.sealed
-					|| rowPrefetched || capture == null || capture.nativeProjection || isClosed()) {
+					|| rowPrefetched || capture == null || isClosed()) {
 				return RepositoryValueIteration.PULL_UNAVAILABLE;
+			}
+			RepositoryValueIteration<?> projectionOwner = null;
+			if (capture.nativeProjection) {
+				WeakReference<RepositoryValueIteration<?>> exposure = repositoryExposure;
+				projectionOwner = exposure == null ? null : exposure.get();
+				if (projectionOwner == null) {
+					return RepositoryValueIteration.PULL_UNAVAILABLE;
+				}
 			}
 			ReadThreadRegistration thread = repositoryPullThread;
 			if (thread == null || thread.owner != Thread.currentThread()) {
@@ -4143,7 +4160,18 @@ public class LmdbStoreConnection extends SailSourceConnection implements SailRes
 								read.begin(thread);
 							}
 							read.throwIfThreadCancelled();
-							row = currentDelegate().next();
+							if (projectionOwner == null) {
+								row = currentDelegate().next();
+							} else {
+								// Only this row is prepared before the next one is asked for; rows buffered below
+								// are captured as any row outside a repository pull.
+								capture.directPull = projectionOwner;
+								try {
+									row = currentDelegate().next();
+								} finally {
+									capture.directPull = null;
+								}
+							}
 							read.validatePull();
 							bufferObservedScan(read);
 						}

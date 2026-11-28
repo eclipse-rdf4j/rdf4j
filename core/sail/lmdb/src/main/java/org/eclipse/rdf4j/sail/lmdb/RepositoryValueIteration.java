@@ -15,6 +15,7 @@ package org.eclipse.rdf4j.sail.lmdb;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -283,6 +284,10 @@ final class RepositoryValueIteration<T>
 		List<Value> roots = new ArrayList<>(bindings.size());
 		bindings.forEachValue(roots::add);
 		return roots;
+	}
+
+	boolean isClosed() {
+		return closed.get();
 	}
 
 	/** A repository pull already owns cold values until its complete current-row wave finishes. */
@@ -607,8 +612,50 @@ final class RepositoryValueIteration<T>
 
 	/** Reuse only small, cleared containers that are not handed to callbacks. */
 	private static final class ResolutionScratch {
+		private static final int FEW_VALUES = 8;
+		/** Holds the visited values only once a row has more than {@link #FEW_VALUES} of them. */
 		final IdentityHashMap<Value, Boolean> visited = new IdentityHashMap<>(8);
+		private final Value[] few = new Value[FEW_VALUES];
+		private int fewCount;
+		private boolean spilled;
 		final List<LmdbValue> wave = new ArrayList<>();
+		/** One wave of a single revision in dictionary order; see {@link #decodeWave}. */
+		final LmdbValue[] ordered = new LmdbValue[FEW_VALUES];
+		final long[] orderedIds = new long[FEW_VALUES];
+
+		/** Whether this is the first time the value is seen in the current row. */
+		boolean firstVisit(Value value) {
+			if (!spilled) {
+				for (int i = 0; i < fewCount; i++) {
+					if (few[i] == value) {
+						return false;
+					}
+				}
+				if (fewCount < FEW_VALUES) {
+					few[fewCount++] = value;
+					return true;
+				}
+				for (int i = 0; i < fewCount; i++) {
+					visited.put(few[i], Boolean.TRUE);
+				}
+				spilled = true;
+			}
+			return visited.put(value, Boolean.TRUE) == null;
+		}
+
+		int visitedCount() {
+			return spilled ? visited.size() : fewCount;
+		}
+
+		void clear() {
+			Arrays.fill(few, 0, fewCount, null);
+			fewCount = 0;
+			if (spilled) {
+				visited.clear();
+				spilled = false;
+			}
+			wave.clear();
+		}
 	}
 
 	private void resolveWaves(List<Value> roots) {
@@ -621,16 +668,14 @@ final class RepositoryValueIteration<T>
 		try {
 			resolveWaves(roots, scratch);
 		} finally {
-			if (resolutionScratch == null && scratch.visited.size() <= MAX_RETAINED_SCRATCH_VALUES) {
-				scratch.visited.clear();
-				scratch.wave.clear();
+			if (resolutionScratch == null && scratch.visitedCount() <= MAX_RETAINED_SCRATCH_VALUES) {
+				scratch.clear();
 				resolutionScratch = scratch;
 			}
 		}
 	}
 
 	private void resolveWaves(List<Value> roots, ResolutionScratch scratch) {
-		IdentityHashMap<Value, Boolean> visited = scratch.visited;
 		List<LmdbValue> wave = scratch.wave;
 		Descendants descendants = null;
 		while (!roots.isEmpty()) {
@@ -642,7 +687,7 @@ final class RepositoryValueIteration<T>
 					LmdbValue lmdb = value instanceof LmdbValue nativeValue ? nativeValue : null;
 					boolean cold = lmdb != null && !lmdb.isInitialized();
 					boolean expand = !cold && mayHaveValueChildren(value);
-					if ((cold || expand) && visited.put(value, Boolean.TRUE) != null) {
+					if ((cold || expand) && !scratch.firstVisit(value)) {
 						continue;
 					}
 					if (lmdb != null) {
@@ -662,7 +707,7 @@ final class RepositoryValueIteration<T>
 				return;
 			}
 			List<Value> next = new ArrayList<>();
-			decodeWave(wave, next);
+			decodeWave(wave, next, scratch);
 			wave.clear();
 			roots = next;
 		}
@@ -689,7 +734,7 @@ final class RepositoryValueIteration<T>
 		}
 	}
 
-	private void decodeWave(List<LmdbValue> wave, List<Value> next) {
+	private void decodeWave(List<LmdbValue> wave, List<Value> next, ResolutionScratch scratch) {
 		Consumer<Value> enqueue = child -> {
 			if (child != null) {
 				next.add(child);
@@ -701,6 +746,9 @@ final class RepositoryValueIteration<T>
 			try (SailClosable activation = activateRevision(value.getInternalIdentity().revision())) {
 				decodeValue(value, enqueue);
 			}
+			return;
+		}
+		if (decodeFewOfOneRevision(wave, enqueue, scratch)) {
 			return;
 		}
 		for (int start = 0; start < wave.size(); start += WAVE_VALUES) {
@@ -722,6 +770,52 @@ final class RepositoryValueIteration<T>
 				}
 			}
 		}
+	}
+
+	/**
+	 * The values of one result row usually share a single revision. Such a wave is one group of the general path, keyed
+	 * by its first value's revision: it is decoded in the same dictionary order under the same activation, without the
+	 * grouping containers. Returns false, having decoded nothing, for any other wave.
+	 */
+	private boolean decodeFewOfOneRevision(List<LmdbValue> wave, Consumer<Value> enqueue, ResolutionScratch scratch) {
+		int size = wave.size();
+		LmdbValue[] ordered = scratch.ordered;
+		if (size > ordered.length) {
+			return false;
+		}
+		long[] ids = scratch.orderedIds;
+		ValueStoreRevision revision = null;
+		for (int index = 0; index < size; index++) {
+			LmdbValue value = wave.get(index);
+			LmdbValue.InternalIdentity identity = value.getInternalIdentity();
+			ValueStoreRevision current = identity.revision();
+			if (index == 0) {
+				revision = current;
+			} else if (current != revision
+					&& (current.hashCode() != revision.hashCode() || !current.equals(revision))) {
+				// More than one group; the general path keeps them apart.
+				Arrays.fill(ordered, 0, index, null);
+				return false;
+			}
+			// Stable insertion by ID, as the general path sorts its group.
+			long id = identity.id();
+			int slot = index;
+			while (slot > 0 && ids[slot - 1] > id) {
+				ids[slot] = ids[slot - 1];
+				ordered[slot] = ordered[slot - 1];
+				slot--;
+			}
+			ids[slot] = id;
+			ordered[slot] = value;
+		}
+		try (SailClosable activation = activateRevision(revision)) {
+			for (int index = 0; index < size; index++) {
+				decodeValue(ordered[index], enqueue);
+			}
+		} finally {
+			Arrays.fill(ordered, 0, size, null);
+		}
+		return true;
 	}
 
 	private SailClosable activateRevision(ValueStoreRevision revision) {
