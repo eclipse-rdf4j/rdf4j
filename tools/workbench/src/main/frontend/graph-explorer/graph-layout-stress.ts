@@ -465,7 +465,10 @@ function occlusionHinge(problem: StressProblem, entries: Entries, fixed: Uint8Ar
         const c = owner[l];
         if (c === a || c === b || (fixed[c] && fixed[a] && fixed[b])) continue;
         const minX = x[c] + entryMinX[l] - pad, maxX = x[c] + entryMaxX[l] + pad, minY = y[c] + entryMinY[l] - pad, maxY = y[c] + entryMaxY[l] + pad;
-        if (!segmentHitsBox(x[a], y[a], x[b], y[b], minX, minY, maxX, maxY)) continue;
+        // Most boxes under a slanted link's own box lie to one side of its line, which is cheaper to see than the clip.
+        const ax = x[a], ay = y[a];
+        if (lineMissesBox(ax, ay, x[b] - ax, y[b] - ay, minX, minY, maxX, maxY)) continue;
+        if (!segmentHitsBox(ax, ay, x[b], y[b], minX, minY, maxX, maxY)) continue;
         cuts++;
         // Move the box perpendicular to the link, to the side its centre is on, until its extent clears the line.
         const lx = x[b] - x[a], ly = y[b] - y[a], length = Math.max(1e-6, Math.hypot(lx, ly));
@@ -524,6 +527,19 @@ export function segmentHitsBox(x0: number, y0: number, x1: number, y1: number, m
 export function segmentBoxApart(x0: number, y0: number, x1: number, y1: number, minX: number, minY: number, maxX: number, maxY: number, margin: number) {
   return (x0 < x1 ? x1 : x0) < minX - margin || (x0 < x1 ? x0 : x1) > maxX + margin ||
     (y0 < y1 ? y1 : y0) < minY - margin || (y0 < y1 ? y0 : y1) > maxY + margin;
+}
+
+/**
+ * Whether the line through (x0, y0) with direction (ex, ey) passes the box at half a pixel or more: its four corners
+ * are on one side of the line, each that far from it. Then `segmentHitsBox` is false for every segment on the line,
+ * so callers may skip the exact test; half a pixel is far above the rounding of drawing coordinates. A line without a
+ * direction or without coordinates (NaN) never does.
+ */
+export function lineMissesBox(x0: number, y0: number, ex: number, ey: number, minX: number, minY: number, maxX: number, maxY: number) {
+  const beside = 0.5 * ((ex < 0 ? -ex : ex) + (ey < 0 ? -ey : ey));
+  const top = ex * (minY - y0), bottom = ex * (maxY - y0), left = ey * (minX - x0), right = ey * (maxX - x0);
+  return top - left > beside ? top - right > beside && bottom - left > beside && bottom - right > beside
+    : top - left < -beside && top - right < -beside && bottom - left < -beside && bottom - right < -beside;
 }
 
 /**
@@ -819,18 +835,129 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
     }
     return cost;
   };
+  // A card tries some forty positions around where it is, and every one of them is scored against the whole drawing.
+  // The positions within `fanReach` of the card share one window, so what can conflict with any of them is listed
+  // once per card: the links and cards within a pixel of the box that holds the window and a link's other end (for
+  // that link's crossings and cuts), and those near the card's own boxes anywhere in the window. A list keeps the
+  // ascending order of the scans it replaces and only leaves out entries whose tests cannot hold, each by the test's
+  // own bound, so the cost counted, and the point at which a count stops, are the same.
+  const fanCards: number[][] = [];
+  // Seven numbers per listed link, which do not change while the card tries its positions: where the link starts, its
+  // direction, where it ends, and the side of its line that the other end of the card's link is on.
+  const fanLinkData: number[][] = [];
+  // The bounds `cutsWithin` skips a listed card by (all its boxes, padded by 4 and a pixel): four per listed card.
+  const fanCardBounds: number[][] = [];
+  const fanCutLinks: number[] = [], fanOverlapCards: number[] = [];
+  let fanCard = -1, fanLoX = 0, fanLoY = 0, fanHiX = 0, fanHiY = 0;
+  // The lists hold what was read before the card moved. That stays true while moving one card changes nothing else,
+  // which views of one buffer do not promise: a caller that overlays the coordinates gets the plain scans.
+  const fans = x.buffer !== y.buffer && links.buffer !== x.buffer && links.buffer !== y.buffer;
+  // A millionth of the drawing's reach, per unit of a link's length: what a side must exceed to be clearly a side.
+  let reachOfDrawing = 1;
+  for (let i = 0; i < n; i++) reachOfDrawing = Math.max(reachOfDrawing, Math.abs(x[i]), Math.abs(y[i]));
+  const sideRounding = 1e-6 * reachOfDrawing;
+  const openFan = (i: number, reach: number) => {
+    fanCard = i;
+    fanLoX = x[i] - reach; fanLoY = y[i] - reach; fanHiX = x[i] + reach; fanHiY = y[i] + reach;
+    const own = incident[i];
+    while (fanCards.length < own.length) { fanCards.push([]); fanCardBounds.push([]); fanLinkData.push([]); }
+    for (let s = 0; s < own.length; s++) {
+      const p = own[s], o = links[2 * p] === i ? links[2 * p + 1] : links[2 * p];
+      // Every position's link to `o` lies in this box.
+      const loX = Math.min(fanLoX, x[o]), loY = Math.min(fanLoY, y[o]), hiX = Math.max(fanHiX, x[o]), hiY = Math.max(fanHiY, y[o]);
+      const cards = fanCards[s], bounds = fanCardBounds[s], data = fanLinkData[s];
+      cards.length = bounds.length = data.length = 0;
+      for (let q = 0; q < count; q++) {
+        const c = links[2 * q], d = links[2 * q + 1];
+        // A link that ends at this card has it on the line of every link of the card: no crossing either way.
+        if (c === i || d === i) continue;
+        const cx = x[c], cy = y[c], dx = x[d], dy = y[d];
+        if ((cx < dx ? dx : cx) < loX - 1 || (cx < dx ? cx : dx) > hiX + 1 || (cy < dy ? dy : cy) < loY - 1 || (cy < dy ? cy : dy) > hiY + 1) continue;
+        // A crossing needs the card and `o` on opposite sides of this link's line. With `o` and the whole window
+        // (its four corners) clearly on one side, no position has that: the side is the expression `linkCost` works
+        // out, linear in the position, and `clear` is far above its rounding and far below a pixel's worth.
+        const fx = dx - cx, fy = dy - cy, clear = sideRounding * ((fx < 0 ? -fx : fx) + (fy < 0 ? -fy : fy));
+        const side = fx * (y[o] - cy) - fy * (x[o] - cx);
+        const top = fx * (fanLoY - cy), bottom = fx * (fanHiY - cy), left = fy * (fanLoX - cx), right = fy * (fanHiX - cx);
+        if (side > clear ? top - left > clear && top - right > clear && bottom - left > clear && bottom - right > clear
+          : side < -clear && top - left < -clear && top - right < -clear && bottom - left < -clear && bottom - right < -clear) continue;
+        data.push(cx, cy, fx, fy, dx, dy, side);
+      }
+      for (let k = 0; k < n; k++) {
+        if (k === i || k === o) continue;
+        // `cutsWithin` skips a box more than a pixel beyond the link's box, padded by 4.
+        if (x[k] + cardHiX[k] + 5 < loX || x[k] + cardLoX[k] - 5 > hiX || y[k] + cardHiY[k] + 5 < loY || y[k] + cardLoY[k] - 5 > hiY) continue;
+        cards.push(k);
+        bounds.push(x[k] + cardLoX[k] - 4 - 1, x[k] + cardHiX[k] + 4 + 1, y[k] + cardLoY[k] - 4 - 1, y[k] + cardHiY[k] + 4 + 1);
+      }
+    }
+    // The card's own boxes, wherever in the window the card is.
+    const loX = fanLoX + cardLoX[i], loY = fanLoY + cardLoY[i], hiX = fanHiX + cardHiX[i], hiY = fanHiY + cardHiY[i];
+    fanCutLinks.length = fanOverlapCards.length = 0;
+    for (let p = 0; p < count; p++) {
+      const a = links[2 * p], b = links[2 * p + 1];
+      if (a === i || b === i) continue;
+      const ax = x[a], ay = y[a], bx = x[b], by = y[b];
+      if ((ax < bx ? bx : ax) < loX - 5 || (ax < bx ? ax : bx) > hiX + 5 || (ay < by ? by : ay) < loY - 5 || (ay < by ? ay : by) > hiY + 5) continue;
+      fanCutLinks.push(p);
+    }
+    for (let k = 0; k < n; k++) {
+      if (k === i) continue;
+      if (x[k] + cardHiX[k] < loX - 25 || x[k] + cardLoX[k] > hiX + 25 || y[k] + cardHiY[k] < loY - 19 || y[k] + cardLoY[k] > hiY + 19) continue;
+      fanOverlapCards.push(k);
+    }
+  };
+  /** `linkCost` for the `slot`th link of the card whose fan is open, the card being inside the fan's window. */
+  const fanLinkCost = (p: number, slot: number, base: number, done?: (cost: number) => boolean) => {
+    const a = links[2 * p], b = links[2 * p + 1];
+    const ax = x[a], ay = y[a], bx = x[b], by = y[b];
+    const loX = ax < bx ? ax : bx, hiX = ax < bx ? bx : ax, loY = ay < by ? ay : by, hiY = ay < by ? by : ay;
+    let cost = 0;
+    if (crossings) {
+      const ex = bx - ax, ey = by - ay, data = fanLinkData[slot];
+      // The card is one end of its link; its side of a listed link's line is all that is new for a position.
+      const px = a === fanCard ? ax : bx, py = a === fanCard ? ay : by;
+      for (let s = 0, end = data.length; s < end; s += 7) {
+        const cx = data[s], cy = data[s + 1];
+        // `linkCost` asks the two questions in the other order: whether the link's line parts the two ends of the
+        // card's link (a product of the same two sides, one of them listed), then whether the card's link parts the
+        // link's ends.
+        if (!((data[s + 2] * (py - cy) - data[s + 3] * (px - cx)) * data[s + 6] < -1e-9)) continue;
+        if (!((ex * (cy - ay) - ey * (cx - ax)) * (ex * (data[s + 5] - ay) - ey * (data[s + 4] - ax)) < -1e-9)) continue;
+        cost += crossings;
+        if (done?.(base + cost)) { stopped = true; return cost; }
+      }
+    }
+    const cards = fanCards[slot], bounds = fanCardBounds[slot];
+    const lx = bx - ax, ly = by - ay;
+    for (let s = 0; s < cards.length; s++) {
+      // Beyond every box of the card on one axis, as `cutsWithin` would find box by box.
+      const minX = bounds[4 * s], maxX = bounds[4 * s + 1], minY = bounds[4 * s + 2], maxY = bounds[4 * s + 3];
+      if (hiX < minX || loX > maxX || hiY < minY || loY > maxY) continue;
+      // Or wholly to one side of the link's line: these bounds lie a pixel outside every box as `cutsWithin` pads it.
+      if (lineMissesBox(ax, ay, lx, ly, minX, minY, maxX, maxY)) continue;
+      const hits = cutsWithin(ax, ay, bx, by, loX, hiX, loY, hiY, cards[s], 4);
+      if (!hits) continue;
+      cost += 3 * hits;
+      if (done?.(base + cost)) { stopped = true; return cost; }
+    }
+    return cost;
+  };
   const cardCost = (i: number, done?: (cost: number) => boolean) => {
     stopped = false;
     let cost = 0;
     // A bound already met with no conflicts counted (a candidate's move costs as much as the best) needs no count.
     if (done?.(cost)) { stopped = true; return cost; }
-    for (const p of incident[i]) {
-      cost += linkCost(p, cost, done);
+    const xi = x[i], yi = y[i], loX = xi + cardLoX[i], loY = yi + cardLoY[i], hiX = xi + cardHiX[i], hiY = yi + cardHiY[i];
+    // The fan's lists hold for this card while it is inside the fan's window.
+    const fan = i === fanCard && xi >= fanLoX && xi <= fanHiX && yi >= fanLoY && yi <= fanHiY;
+    const own = incident[i];
+    for (let s = 0; s < own.length; s++) {
+      cost += fan ? fanLinkCost(own[s], s, cost, done) : linkCost(own[s], cost, done);
       if (stopped) return cost;
     }
     // Links of other cards cutting this card or its fan.
-    const xi = x[i], yi = y[i], loX = xi + cardLoX[i], loY = yi + cardLoY[i], hiX = xi + cardHiX[i], hiY = yi + cardHiY[i];
-    for (const p of linksNear(loX - 5, loY - 5, hiX + 5, hiY + 5)) {
+    for (const p of fan ? fanCutLinks : linksNear(loX - 5, loY - 5, hiX + 5, hiY + 5)) {
       const a = links[2 * p], b = links[2 * p + 1];
       if (a === i || b === i) continue;
       const hits = cuts(x[a], y[a], x[b], y[b], i, 4);
@@ -838,7 +965,7 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
       cost += 3 * hits;
       if (done?.(cost)) { stopped = true; return cost; }
     }
-    for (const k of cardsNear(loX - 25, loY - 19, hiX + 25, hiY + 19)) {
+    for (const k of fan ? fanOverlapCards : cardsNear(loX - 25, loY - 19, hiX + 25, hiY + 19)) {
       if (k === i) continue;
       const xk = x[k], yk = y[k];
       for (let e = boxStart[i]; e < boxStart[i + 1]; e++) for (let f = boxStart[k]; f < boxStart[k + 1]; f++) {
@@ -858,8 +985,11 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
     for (let i = 0; i < n; i++) {
       if (fixed[i] || !incident[i].length) continue;
       trial(i);
+      // Scanning the whole drawing for the card where it is costs as much as listing what is near its positions, and
+      // nearly every card of a drawing dense enough to be scanned goes on to try them.
+      if (fans && !cardTree) openFan(i, 3.2 * scale + 1);
       const start = cardCost(i);
-      if (!start) continue;
+      if (!start) { fanCard = -1; continue; }
       const x0 = x[i], y0 = y[i];
       const candidates: Array<[number, number]> = [];
       for (const r of [0.6, 1.2, 2, 3.2]) for (let k = 0; k < 8; k++) candidates.push([x0 + Math.cos(k * Math.PI / 4) * r * scale, y0 + Math.sin(k * Math.PI / 4) * r * scale]);
@@ -881,6 +1011,8 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
       mx /= incident[i].length; my /= incident[i].length;
       candidates.push([2 * mx - x0, 2 * my - y0]);
       let bestCost = start, bestX = x0, bestY = y0;
+      // The ring positions reach 3.2 steps.
+      if (fans && fanCard !== i) openFan(i, 3.2 * scale + 1);
       for (const [cx, cy] of candidates) {
         x[i] = cx; y[i] = cy;
         const move = Math.hypot(cx - x0, cy - y0) * moveCost / scale, limit = bestCost - 0.05;
@@ -890,6 +1022,8 @@ export function untangle(problem: StressProblem, passes = 3, {crossings = 1, mov
         const cost = conflicts + move;
         if (cost < limit) { bestCost = cost; bestX = cx; bestY = cy; }
       }
+      // The lists describe the drawing as it was: they end with the positions tried from it.
+      fanCard = -1;
       x[i] = bestX; y[i] = bestY;
       if (bestX !== x0 || bestY !== y0) { accept(i); improved++; continue; }
       // Trading places with a nearby card undoes crossings no single move can (two cards on the wrong sides). The card

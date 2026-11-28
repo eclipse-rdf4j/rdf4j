@@ -45,16 +45,49 @@ const SLOT_REACH = 40;
 /** Spacing between the arrows of one card that go round the same corner. */
 const NUDGE = 6;
 
-/** Extra cost of a detour leg for every card it passes within `ROOM` of. */
-function crowding(a: PointerPosition, b: PointerPosition, near: readonly Box[]) {
-  let cost = 0;
-  for (const box of near) {
-    // A card more than `ROOM` away on an axis adds nothing; most of them are, so they skip the distance.
-    if (segmentBoxApart(a.x, a.y, b.x, b.y, box.x - box.halfWidth, box.y - box.halfHeight, box.x + box.halfWidth, box.y + box.halfHeight, ROOM + 1)) continue;
-    const gap = boxDistance(a, b, box);
-    if (gap < ROOM) cost += (ROOM - gap) * 2;
-  }
-  return cost;
+/**
+ * Extra cost of a detour leg for every card it passes within `ROOM` of, as a function of the leg and its length. The
+ * cards are asked in their order, so the cost is the same sum whichever of them are skipped. The leg is `reached` long
+ * so far and only matters while that and its cost stay under `limit`: the sum stops once they do not, as it only grows.
+ */
+function crowdingOf(near: readonly Box[]) {
+  // A card more than `ROOM` away on an axis adds nothing: `segmentBoxApart` with a margin of `ROOM + 1`, its four
+  // bounds worked out once.
+  const lowX = Float64Array.from(near, box => box.x - box.halfWidth - (ROOM + 1)), highX = Float64Array.from(near, box => box.x + box.halfWidth + (ROOM + 1));
+  const lowY = Float64Array.from(near, box => box.y - box.halfHeight - (ROOM + 1)), highY = Float64Array.from(near, box => box.y + box.halfHeight + (ROOM + 1));
+  const count = near.length;
+  return (a: PointerPosition, b: PointerPosition, length: number, reached: number, limit: number) => {
+    const loX = a.x < b.x ? a.x : b.x, hiX = a.x < b.x ? b.x : a.x, loY = a.y < b.y ? a.y : b.y, hiY = a.y < b.y ? b.y : a.y;
+    let cost = 0;
+    for (let i = 0; i < count; i++) {
+      // Most cards are that far away, so they skip the distance.
+      if (hiX < lowX[i] || loX > highX[i] || hiY < lowY[i] || loY > highY[i]) continue;
+      const box = near[i];
+      // So does a card the leg's whole line stays more than `ROOM` away from, which most of the remaining ones are.
+      if (lineClearOfBox(a, b, length, box, ROOM + 0.5)) continue;
+      const gap = boxDistance(a, b, box);
+      if (gap < ROOM) {
+        cost += (ROOM - gap) * 2;
+        if (reached + cost >= limit) return cost;
+      }
+    }
+    return cost;
+  };
+}
+
+/**
+ * Whether the line through a and b stays more than `room` away from the box: all four corners lie on one side of it,
+ * each more than `room` from it. Every point of segment a–b is then further than `room` from the box, and so is every
+ * distance `boxDistance` samples on it. `length` is the distance from a to b. Half a pixel of `room` is far above the
+ * rounding of drawing coordinates; a line without coordinates (NaN) is never clear.
+ */
+function lineClearOfBox(a: PointerPosition, b: PointerPosition, length: number, box: Box, room: number) {
+  const ex = b.x - a.x, ey = b.y - a.y, limit = room * length;
+  const left = box.x - box.halfWidth - a.x, right = box.x + box.halfWidth - a.x;
+  const top = box.y - box.halfHeight - a.y, bottom = box.y + box.halfHeight - a.y;
+  const first = ex * top - ey * left;
+  if (first > limit) return ex * top - ey * right > limit && ex * bottom - ey * right > limit && ex * bottom - ey * left > limit;
+  return first < -limit && ex * top - ey * right < -limit && ex * bottom - ey * right < -limit && ex * bottom - ey * left < -limit;
 }
 
 /** Room a detour likes to keep from the cards it passes. */
@@ -64,18 +97,55 @@ const ROOM = 28;
 function boxDistance(a: PointerPosition, b: PointerPosition, box: Box) {
   const minX = box.x - box.halfWidth, maxX = box.x + box.halfWidth, minY = box.y - box.halfHeight, maxY = box.y + box.halfHeight;
   if (segmentHitsBox(a.x, a.y, b.x, b.y, minX, minY, maxX, maxY)) return 0;
-  const clampX = (v: number) => Math.max(minX, Math.min(maxX, v)), clampY = (v: number) => Math.max(minY, Math.min(maxY, v));
   let best = Infinity;
   for (let i = 0; i <= 8; i++) {
     const t = i / 8, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t;
-    best = Math.min(best, Math.hypot(x - clampX(x), y - clampY(y)));
+    const dx = x - Math.max(minX, Math.min(maxX, x)), dy = y - Math.max(minY, Math.min(maxY, y));
+    // Beside the box (not off a corner) one of the two is zero, and the distance is the other: `Math.hypot` of them.
+    best = Math.min(best, dx === 0 ? Math.abs(dy) : dy === 0 ? Math.abs(dx) : Math.hypot(dx, dy));
   }
   return best;
 }
 
 type Box = {id: string; x: number; y: number; halfWidth: number; halfHeight: number};
 /** The cards' boxes, their bounds as the grid holds them, and the grid. */
-type Obstacles = {boxes: Box[]; bounds: Bounds[]; grid: SpatialGrid};
+type Obstacles = {boxes: Box[]; bounds: Bounds[]; grid: SpatialGrid; lanes?: Lanes};
+
+/**
+ * The cards' boxes widened by `CLEARANCE`, in the cells of a grid over them all: what `blocked` asks for the cards a
+ * segment can come that close to. A card is in every cell its widened box reaches.
+ */
+type Lanes = {
+  left: number; top: number; right: number; bottom: number; size: number; columns: number; rows: number;
+  cells: number[][]; stamp: Uint32Array; epoch: number;
+  minX: Float64Array; minY: Float64Array; maxX: Float64Array; maxY: Float64Array;
+};
+
+function lanesOf(boxes: readonly Box[]): Lanes | undefined {
+  const count = boxes.length;
+  const minX = new Float64Array(count), minY = new Float64Array(count), maxX = new Float64Array(count), maxY = new Float64Array(count);
+  let left = Infinity, top = Infinity, right = -Infinity, bottom = -Infinity;
+  for (let i = 0; i < count; i++) {
+    const box = boxes[i];
+    minX[i] = box.x - box.halfWidth - CLEARANCE; minY[i] = box.y - box.halfHeight - CLEARANCE;
+    maxX[i] = box.x + box.halfWidth + CLEARANCE; maxY[i] = box.y + box.halfHeight + CLEARANCE;
+    // A card without a place or a size has no cells: `blocked` then asks the grid, as it does for any other clearance.
+    if (!(minX[i] <= maxX[i] && minY[i] <= maxY[i])) return undefined;
+    left = Math.min(left, minX[i]); top = Math.min(top, minY[i]); right = Math.max(right, maxX[i]); bottom = Math.max(bottom, maxY[i]);
+  }
+  if (!count || !(Number.isFinite(left) && Number.isFinite(top) && Number.isFinite(right) && Number.isFinite(bottom))) return undefined;
+  // About a card wide, and no more cells than a few per card.
+  let size = 192;
+  while ((Math.floor((right - left) / size) + 1) * (Math.floor((bottom - top) / size) + 1) > Math.max(1024, 8 * count)) size *= 2;
+  const columns = Math.floor((right - left) / size) + 1, rows = Math.floor((bottom - top) / size) + 1;
+  const cells: number[][] = Array.from({length: columns * rows}, () => []);
+  for (let i = 0; i < count; i++) {
+    const x0 = Math.floor((minX[i] - left) / size), x1 = Math.floor((maxX[i] - left) / size);
+    const y0 = Math.floor((minY[i] - top) / size), y1 = Math.floor((maxY[i] - top) / size);
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) cells[y * columns + x].push(i);
+  }
+  return {left, top, right, bottom, size, columns, rows, cells, stamp: new Uint32Array(count), epoch: 0, minX, minY, maxX, maxY};
+}
 
 function obstaclesOf(nodes: readonly GraphNode[]): Obstacles {
   const grid = new SpatialGrid(192), boxes: Box[] = [], bounds: Bounds[] = [];
@@ -87,7 +157,7 @@ function obstaclesOf(nodes: readonly GraphNode[]): Obstacles {
     bounds.push(b);
     grid.insert(b);
   }
-  return {boxes, bounds, grid};
+  return {boxes, bounds, grid, lanes: lanesOf(boxes)};
 }
 
 /**
@@ -111,6 +181,45 @@ function hitsAny(o: Obstacles, candidates: readonly number[], a: PointerPosition
 
 /** Whether a card (other than `except`) is within `clearance` of the segment a–b. */
 function blocked(o: Obstacles, a: PointerPosition, b: PointerPosition, except: ReadonlySet<string>, clearance: number) {
+  const lanes = o.lanes;
+  if (lanes && clearance === CLEARANCE) {
+    // The answer of the grid search below, without listing the cards under the segment's whole box: a card the
+    // segment comes that close to holds a point of it in its widened box, and so is in a cell the segment passes. The
+    // cards visited are put to the same two tests as the cards the grid finds.
+    const ax = a.x, ay = a.y, bx = b.x, by = b.y;
+    const minX = Math.min(ax, bx) - clearance, minY = Math.min(ay, by) - clearance, maxX = Math.max(ax, bx) + clearance, maxY = Math.max(ay, by) + clearance;
+    if (!(Number.isFinite(minX) && Number.isFinite(minY) && Number.isFinite(maxX) && Number.isFinite(maxY)) || minX > maxX || minY > maxY) return false;
+    if (!(maxX >= lanes.left && minX <= lanes.right && maxY >= lanes.top && minY <= lanes.bottom)) return false;
+    const {left, top, size, columns, cells, stamp} = lanes;
+    const x0 = Math.max(0, Math.floor((minX - left) / size)), x1 = Math.min(columns - 1, Math.floor((maxX - left) / size));
+    const y0 = Math.max(0, Math.floor((minY - top) / size)), y1 = Math.min(lanes.rows - 1, Math.floor((maxY - top) / size));
+    const epoch = lanes.epoch = (lanes.epoch + 1) >>> 0;
+    if (!epoch) { stamp.fill(0); lanes.epoch = 1; return blocked(o, a, b, except, clearance); }
+    const dy = by - ay, slanted = x1 - x0 > 1 && y1 > y0 && (dy > 1 || dy < -1), run = slanted ? (bx - ax) / dy : 0;
+    const loY = Math.min(ay, by) - 1, hiY = Math.max(ay, by) + 1;
+    for (let y = y0; y <= y1; y++) {
+      let first = x0, last = x1;
+      if (slanted) {
+        // Where the segment is while within a pixel of this row, a pixel to either side.
+        const from = Math.max(loY, top + y * size - 1), to = Math.min(hiY, top + (y + 1) * size + 1);
+        const xFrom = ax + (from - ay) * run, xTo = ax + (to - ay) * run;
+        first = Math.max(x0, Math.floor(((xFrom < xTo ? xFrom : xTo) - 1 - left) / size));
+        last = Math.min(x1, Math.floor(((xFrom < xTo ? xTo : xFrom) + 1 - left) / size));
+      }
+      for (let x = first; x <= last; x++) {
+        const cell = cells[y * columns + x];
+        for (let c = 0; c < cell.length; c++) {
+          const i = cell[c];
+          if (stamp[i] === epoch) continue;
+          stamp[i] = epoch;
+          const e = o.bounds[i];
+          if (!(e.maxX >= minX && e.minX <= maxX && e.maxY >= minY && e.minY <= maxY) || except.has(o.boxes[i].id)) continue;
+          if (segmentHitsBox(ax, ay, bx, by, lanes.minX[i], lanes.minY[i], lanes.maxX[i], lanes.maxY[i])) return true;
+        }
+      }
+    }
+    return false;
+  }
   const found = o.grid.search(Math.min(a.x, b.x) - clearance, Math.min(a.y, b.y) - clearance, Math.max(a.x, b.x) + clearance, Math.max(a.y, b.y) + clearance);
   const candidates: number[] = [];
   for (const i of found) if (!except.has(o.boxes[i].id)) candidates.push(i);
@@ -349,9 +458,9 @@ function movedPorts(source: GraphNode, target: GraphNode, o: Obstacles, except: 
 }
 
 /**
- * Whether a segment comes within `clearance` of one of the boxes (`segmentHitsBox` on each box widened by it), asked of
- * a small grid over the boxes: a box the segment meets lies within half a pixel of the segment's own box, so only the
- * cells under that are visited.
+ * A box the segment comes within `clearance` of (`segmentHitsBox` on each box widened by it), or -1 when there is none,
+ * asked of a small grid over the boxes: a box the segment meets lies within half a pixel of the segment's own box, so
+ * only the cells under that are visited.
  */
 function segmentMeetsBoxes(boxes: readonly Box[], clearance: number) {
   const count = boxes.length;
@@ -362,7 +471,7 @@ function segmentMeetsBoxes(boxes: readonly Box[], clearance: number) {
     maxX[i] = box.x + box.halfWidth + clearance; maxY[i] = box.y + box.halfHeight + clearance;
     left = Math.min(left, minX[i]); top = Math.min(top, minY[i]); right = Math.max(right, maxX[i]); bottom = Math.max(bottom, maxY[i]);
   });
-  const every = (a: PointerPosition, b: PointerPosition) => boxes.some((_, i) => segmentHitsBox(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i]));
+  const every = (a: PointerPosition, b: PointerPosition) => boxes.findIndex((_, i) => segmentHitsBox(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i]));
   if (!count || !(Number.isFinite(left) && Number.isFinite(top) && Number.isFinite(right) && Number.isFinite(bottom))) return every;
   const size = Math.max(48, (right - left) / 12, (bottom - top) / 12);
   const columns = Math.floor((right - left) / size) + 1, rows = Math.floor((bottom - top) / size) + 1;
@@ -378,19 +487,35 @@ function segmentMeetsBoxes(boxes: readonly Box[], clearance: number) {
     const loX = Math.min(a.x, b.x) - 1, hiX = Math.max(a.x, b.x) + 1, loY = Math.min(a.y, b.y) - 1, hiY = Math.max(a.y, b.y) + 1;
     // A segment without coordinates (NaN) is tested against every box, as it is.
     if (!(loX <= hiX && loY <= hiY)) return every(a, b);
-    if (!(hiX >= left && loX <= right && hiY >= top && loY <= bottom)) return false;
+    if (!(hiX >= left && loX <= right && hiY >= top && loY <= bottom)) return -1;
     const x0 = Math.max(0, Math.floor((loX - left) / size)), x1 = Math.min(columns - 1, Math.floor((hiX - left) / size));
     const y0 = Math.max(0, Math.floor((loY - top) / size)), y1 = Math.min(rows - 1, Math.floor((hiY - top) / size));
     epoch++;
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      for (const i of cells[y * columns + x]) {
-        if (stamp[i] === epoch) continue;
-        stamp[i] = epoch;
-        if (!segmentBoxApart(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i], 1) &&
-          segmentHitsBox(a.x, a.y, b.x, b.y, minX[i], minY[i], maxX[i], maxY[i])) return true;
+    // A slanted segment crosses each row of cells only between two columns: where it is while within a pixel of the
+    // row, a pixel to either side. A box it meets holds a point of it, in a cell of the box, so that cell is visited.
+    const ax = a.x, ay = a.y, bx = b.x, by = b.y, dy = by - ay;
+    const slanted = x1 - x0 > 1 && y1 > y0 && (dy > 1 || dy < -1);
+    const run = slanted ? (bx - ax) / dy : 0;
+    for (let y = y0; y <= y1; y++) {
+      let first = x0, last = x1;
+      if (slanted) {
+        const from = Math.max(loY, top + y * size - 1), to = Math.min(hiY, top + (y + 1) * size + 1);
+        const xFrom = ax + (from - ay) * run, xTo = ax + (to - ay) * run;
+        first = Math.max(x0, Math.floor(((xFrom < xTo ? xFrom : xTo) - 1 - left) / size));
+        last = Math.min(x1, Math.floor(((xFrom < xTo ? xTo : xFrom) + 1 - left) / size));
+      }
+      for (let x = first; x <= last; x++) {
+        const cell = cells[y * columns + x];
+        for (let c = 0; c < cell.length; c++) {
+          const i = cell[c];
+          if (stamp[i] === epoch) continue;
+          stamp[i] = epoch;
+          if (!segmentBoxApart(ax, ay, bx, by, minX[i], minY[i], maxX[i], maxY[i], 1) &&
+            segmentHitsBox(ax, ay, bx, by, minX[i], minY[i], maxX[i], maxY[i])) return i;
+        }
       }
     }
-    return false;
+    return -1;
   };
 }
 
@@ -402,9 +527,15 @@ function detour(source: GraphNode, target: GraphNode, o: Obstacles, except: Read
   const corridor = 160 + straight * 0.2;
   const found: number[] = [];
   o.grid.search(Math.min(sc.x, tc.x) - corridor, Math.min(sc.y, tc.y) - corridor, Math.max(sc.x, tc.x) + corridor, Math.max(sc.y, tc.y) + corridor, found);
-  const near = found.map(i => o.boxes[i]).filter(box => !except.has(box.id) &&
-    boxDistance(sc, tc, box) <= corridor);
-  if (near.length > DETOUR_OBSTACLE_LIMIT) return null;
+  const near: Box[] = [];
+  for (const i of found) {
+    const box = o.boxes[i];
+    // A card the straight line stays further from than the corridor is outside it without measuring the distance.
+    if (except.has(box.id) || lineClearOfBox(sc, tc, straight, box, corridor + 0.5) || !(boxDistance(sc, tc, box) <= corridor)) continue;
+    near.push(box);
+    // Too many cards in the way: no detour is searched, however many more there are.
+    if (near.length > DETOUR_OBSTACLE_LIMIT) return null;
+  }
   const pad = DETOUR_PADDING;
   const points: PointerPosition[] = [sc, tc];
   for (const box of near) {
@@ -412,28 +543,67 @@ function detour(source: GraphNode, target: GraphNode, o: Obstacles, except: Read
     points.push({x: box.x - hw, y: box.y - hh}, {x: box.x + hw, y: box.y - hh}, {x: box.x + hw, y: box.y + hh}, {x: box.x - hw, y: box.y + hh});
   }
   // Corners inside another padded card are useless.
-  const usable = points.map((p, i) => i < 2 || !near.some(box => Math.abs(p.x - box.x) < box.halfWidth + pad - 0.5 && Math.abs(p.y - box.y) < box.halfHeight + pad - 0.5));
+  const usable = new Uint8Array(points.length).fill(1);
+  for (let i = 2; i < points.length; i++) {
+    const p = points[i];
+    for (const box of near) {
+      if (Math.abs(p.x - box.x) < box.halfWidth + pad - 0.5 && Math.abs(p.y - box.y) < box.halfHeight + pad - 0.5) { usable[i] = 0; break; }
+    }
+  }
   const meets = segmentMeetsBoxes(near, CLEARANCE);
-  const visible = (a: PointerPosition, b: PointerPosition) => !meets(a, b);
+  // Most legs to a card's corner are blocked by that card itself, or by the card the leg starts at a corner of. That
+  // is `meets` for one box (the same two tests on the same widened box), asked before anything else is worked out for
+  // the leg: a blocked leg changes nothing, whatever its length.
+  const wideMinX = Float64Array.from(near, box => box.x - box.halfWidth - CLEARANCE), wideMinY = Float64Array.from(near, box => box.y - box.halfHeight - CLEARANCE);
+  const wideMaxX = Float64Array.from(near, box => box.x + box.halfWidth + CLEARANCE), wideMaxY = Float64Array.from(near, box => box.y + box.halfHeight + CLEARANCE);
+  const cardBlocks = (ax: number, ay: number, bx: number, by: number, i: number) =>
+    !segmentBoxApart(ax, ay, bx, by, wideMinX[i], wideMinY[i], wideMaxX[i], wideMaxY[i], 1) &&
+    segmentHitsBox(ax, ay, bx, by, wideMinX[i], wideMinY[i], wideMaxX[i], wideMaxY[i]);
+  const crowding = crowdingOf(near);
+  const pointX = Float64Array.from(points, p => p.x), pointY = Float64Array.from(points, p => p.y);
+  // The card that last blocked a leg to each point. A card in the way of one leg to a corner is often in the way of
+  // the next, from wherever it starts, and so is the card that just blocked a leg from the same start: both are asked
+  // (`meets` for that one card) before the grid is.
+  const blockerOf = new Int32Array(points.length).fill(-1);
   // A* from the source centre to the target centre; the end cards are not obstacles.
   const count = points.length, distance = new Float64Array(count).fill(Infinity), previous = new Int32Array(count).fill(-1);
   const closed = new Uint8Array(count);
   distance[0] = 0;
   const heuristic = Float64Array.from(points, p => Math.hypot(p.x - tc.x, p.y - tc.y));
+  // A way that reaches a point at `candidate` is at least `candidate` plus the straight line from there to the target
+  // long. Past the longest detour that is kept, or past the way to the target already found, it cannot be part of the
+  // answer, so the leg is not examined. The margins are far above the rounding of these sums, and a way exactly as
+  // long as the one found never replaced it.
+  const longest = straight * 1.45 + 120 + 1;
   for (let step = 0; step < count; step++) {
     let current = -1, value = Infinity;
     for (let i = 0; i < count; i++) if (!closed[i] && usable[i] && distance[i] + heuristic[i] < value) { value = distance[i] + heuristic[i]; current = i; }
     if (current < 0 || current === 1) break;
     closed[current] = 1;
+    const fromX = pointX[current], fromY = pointY[current], reached = distance[current];
+    let blocker = -1;
     for (let next = 0; next < count; next++) {
       if (closed[next] || !usable[next] || next === current) continue;
-      const length = Math.hypot(points[next].x - points[current].x, points[next].y - points[current].y);
+      const toX = pointX[next], toY = pointY[next], corner = next === 1 ? 0 : 6;
+      // The leg is at least as long as its longer side: enough to see most legs fail the two tests below without
+      // working out their length.
+      const spanX = toX < fromX ? fromX - toX : toX - fromX, spanY = toY < fromY ? fromY - toY : toY - fromY;
+      const least = reached + (spanX < spanY ? spanY : spanX) + corner;
+      if (least >= distance[next] || least + heuristic[next] > longest || least + heuristic[next] > distance[1] + 1e-6) continue;
+      // Points 2 and up are the corners of the cards, four each.
+      if (next >= 2 && cardBlocks(fromX, fromY, toX, toY, (next - 2) >> 2)) continue;
+      if (current >= 2 && cardBlocks(fromX, fromY, toX, toY, (current - 2) >> 2)) continue;
+      if (blockerOf[next] >= 0 && cardBlocks(fromX, fromY, toX, toY, blockerOf[next])) continue;
+      if (blocker >= 0 && blocker !== blockerOf[next] && cardBlocks(fromX, fromY, toX, toY, blocker)) continue;
+      const length = Math.hypot(toX - fromX, toY - fromY);
       // Each corner costs a little, so a straight run beats a zigzag of the same length.
-      const candidate = distance[current] + length + (next === 1 ? 0 : 6);
+      const candidate = reached + length + corner;
       if (candidate >= distance[next]) continue;
-      if (!visible(points[current], points[next])) continue;
+      if (candidate + heuristic[next] > longest || candidate + heuristic[next] > distance[1] + 1e-6) continue;
+      const met = meets(points[current], points[next]);
+      if (met >= 0) { blockerOf[next] = blocker = met; continue; }
       // Passing close by a card costs extra, so of two equally short ways round the roomier one wins.
-      const tight = candidate + crowding(points[current], points[next], near);
+      const tight = candidate + crowding(points[current], points[next], length, candidate, distance[next]);
       if (tight >= distance[next]) continue;
       distance[next] = tight; previous[next] = current;
     }

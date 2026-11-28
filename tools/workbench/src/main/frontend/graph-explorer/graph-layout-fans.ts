@@ -77,7 +77,11 @@ type FanRequest = {
 };
 
 type FanObstacleGeometry = {boxes?: FanBoxIndex; areas?: FanBoxIndex; segments?: FanSegmentIndex};
-type FanSearch = FanRequest & {obstacleGeometry?: FanObstacleGeometry};
+type FanSearch = FanRequest & {
+  obstacleGeometry?: FanObstacleGeometry;
+  /** The shapes the ring search has asked `shape` for, unit `i` of `units` on side `s` at `4 * i + s`. */
+  sideShapes?: Array<UnitShape | undefined>;
+};
 
 function validBounds(left: number, top: number, right: number, bottom: number) {
   return Number.isFinite(left) && Number.isFinite(top) && Number.isFinite(right) && Number.isFinite(bottom) &&
@@ -334,18 +338,6 @@ const RINGS_MAX = 200;
 
 const ALONG_STEP = 8;
 
-/** Point of the ring at perimeter coordinate t, clockwise from the top of the right side: [side, offset on side]. */
-function locate(t: number, hx: number, hy: number): [Side, number] {
-  const perimeter = 4 * hx + 4 * hy;
-  let r = ((t % perimeter) + perimeter) % perimeter;
-  if (r < 2 * hy) return [0, r];
-  r -= 2 * hy;
-  if (r < 2 * hx) return [1, r];
-  r -= 2 * hx;
-  if (r < 2 * hy) return [2, r];
-  return [3, r - 2 * hy];
-}
-
 /** Perimeter coordinate where side `side` starts. */
 function sideStart(side: Side, hx: number, hy: number) {
   return side === 0 ? 0 : side === 1 ? 2 * hy : side === 2 ? 2 * hy + 2 * hx : 4 * hy + 2 * hx;
@@ -386,19 +378,33 @@ function boxesTouch(a: Extents, b: Extents, clearX: number, clearY: number) {
  */
 function walk(request: FanSearch, hx: number, hy: number, start: number, limit: number,
   gapScale: number): FanPlacement[] | null {
-  const {units, shape, spacing, obstacles, obstacleGeometry} = request;
+  const {units, shape, spacing, obstacles, obstacleGeometry, sideShapes} = request;
   const placements: FanPlacement[] = [];
   let t = start;
   const end = start + limit + 1e-6;
-  for (const unit of units) {
+  // A ring search walks its ring thousands of times, most walks ending after a few steps, so a unit's shape for a
+  // side is asked for once per search. The perimeter coordinate t runs clockwise from the top of the right side; it
+  // is split below into the side it is on and the offset `s` on that side.
+  const perimeter = 4 * hx + 4 * hy;
+  for (let u = 0; u < units.length; u++) {
+    const unit = units[u];
     let placed = false;
     for (let guard = 0; guard < 4000 && !placed; guard++) {
       if (t > end) return null;
-      const [side, s] = locate(t, hx, hy);
+      let s = ((t % perimeter) + perimeter) % perimeter, side: Side = 0;
+      if (!(s < 2 * hy)) {
+        s -= 2 * hy;
+        if (s < 2 * hx) side = 1;
+        else {
+          s -= 2 * hx;
+          if (s < 2 * hy) side = 2;
+          else { side = 3; s -= 2 * hy; }
+        }
+      }
       const length = sideLength(side, hx, hy);
       const margin = side % 2 === 0 ? spacing.clearY : 0;
       if (s < margin - 1e-6) { t += margin - s; continue; }
-      const unitShape = shape(unit, side);
+      const unitShape = sideShapes ? (sideShapes[4 * u + side] ??= shape(unit, side)) : shape(unit, side);
       const along = alongExtent(side, unitShape.extents);
       if (s + along > length - margin + 1e-6) {
         // Next side.
@@ -546,6 +552,7 @@ function placePreparedFan(request: FanSearch): Fan {
   }
   const big = ringsFan(request);
   if (big) return big;
+  if (!request.sideShapes) request = {...request, sideShapes: new Array<UnitShape | undefined>(4 * units.length)};
   const hxMin = request.halfWidth + spacing.edgeLength, hyMin = request.halfHeight + spacing.edgeLength * 0.7;
   // Upper bounds: everything in one column, everything in one row.
   let column = 0, row = 0;
@@ -560,18 +567,21 @@ function placePreparedFan(request: FanSearch): Fan {
   const steps = Math.min(40, Math.max(6, Math.ceil((hyMax - hyMin) / 20)));
   for (let i = 0; i <= steps; i++) {
     const hy = hyMin + (hyMax - hyMin) * i / steps;
-    const attempt = (hx: number) => arrange(request, hx, hy, span);
+    // The search only asks whether the units fit a ring, which the first walk of `arrange` answers; the units are
+    // arranged once, on the narrowest ring found to fit them.
+    const fits = (hx: number) => packed(request, hx, hy, span) !== null;
     let low = hxMin, high = hxMax;
-    let found = attempt(high);
-    if (!found) {
+    let fitted = fits(high);
+    if (!fitted) {
       // Obstacles can block even the widest ring; grow it until the units fit.
-      for (let grow = 0; grow < 8 && !found; grow++) { high *= 1.4; found = attempt(high); }
-      if (!found) continue;
+      for (let grow = 0; grow < 8 && !fitted; grow++) { high *= 1.4; fitted = fits(high); }
+      if (!fitted) continue;
     }
     for (let iteration = 0; iteration < 14 && high - low > 2; iteration++) {
-      const middle = (low + high) / 2, placed = attempt(middle);
-      if (placed) { high = middle; found = placed; } else low = middle;
+      const middle = (low + high) / 2;
+      if (fits(middle)) high = middle; else low = middle;
     }
+    const found = arrange(request, high, hy, span)!;
     const extents = fanExtents(request, found);
     const value = score(extents, spacing.aspectRatio);
     if (!best || value < best.value - 1e-6) best = {placements: found, extents, hx: high, hy, value};
@@ -721,6 +731,14 @@ function ringsFan(request: FanSearch): Fan | null {
   }
   if (placements.length < units.length) return null;
   return {placements, extents: fanExtents(request, placements), inner: outer, ring: true};
+}
+
+/** The units packed on the ring of half size (hx, hy), as `arrange` first walks it; null when they do not fit. */
+function packed(request: FanSearch, hx: number, hy: number, span: number): FanPlacement[] | null {
+  const limit = (4 * hx + 4 * hy) * Math.min(1, span);
+  if (request.spread) return walk(request, hx, hy, 0, limit, 1);
+  const facing = request.facing ?? 0;
+  return walk(request, hx, hy, sideStart(facing, hx, hy) + sideLength(facing, hx, hy) / 2 - limit / 2, limit, 1);
 }
 
 /** Packs or spreads the units on the ring of half size (hx, hy); null when they do not fit. */
