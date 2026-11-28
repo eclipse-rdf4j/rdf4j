@@ -30,6 +30,35 @@ test("workspace view choices survive the compact workspace roundtrip",()=>{
   assert.deepEqual(parseWorkspacePayload(raw,{repositoryReferences:true}).view,view());
 });
 
+test("per-collection structure and connection choices survive a saved view",()=>{
+  const collectionView={...view(),expandedCollectionIds:["urn:head","<_:stored-head>"],connectedCollectionIds:["urn:head"]};
+  const original=payload({view:collectionView});
+  original.graph.nodes.push({id:"urn:head",label:"List",kind:"iri"},{id:"<_:stored-head>",label:"List",kind:"blank"});
+  const opened=parseWorkspacePayload(encodeWorkspace(original),{repositoryReferences:true});
+  assert.deepEqual(opened.view,collectionView);
+});
+
+test("restored collection choices follow migrated blank nodes and drop missing heads",()=>{
+  const original=payload({view:{...view(),expandedCollectionIds:["_:head","<_:fixed>","urn:gone"],
+    connectedCollectionIds:["<_:fixed>","urn:gone"]}});
+  original.graph.nodes.push({id:"_:head",label:"Legacy list",kind:"blank"},{id:"<_:fixed>",label:"Fixed list",kind:"blank"});
+  for(const repositoryReferences of [true,false]){
+    const restored=parseWorkspacePayload(JSON.stringify(original),{repositoryReferences});
+    const [legacy,fixed]=restored.graph.nodes.slice(1).map(node=>node.id);
+    assert.notEqual(legacy,"_:head");
+    assert.deepEqual(restored.view.expandedCollectionIds,[legacy,fixed]);
+    assert.deepEqual(restored.view.connectedCollectionIds,[fixed]);
+  }
+});
+
+test("invalid collection view choices do not invalidate the saved RDF",()=>{
+  for(const choices of [{expandedCollectionIds:[42]},{connectedCollectionIds:"urn:head"}]){
+    const opened=parseWorkspacePayload(encodeWorkspace(payload({view:{...view(),...choices}})),{repositoryReferences:true});
+    assert.equal(opened.view,undefined);
+    assert.equal(opened.graph.nodes.length,1);
+  }
+});
+
 test("every view mode the page has survives a save",()=>{
   for(const viewMode of VIEW_MODES){
     const raw=encodeWorkspace(payload({view:{...view(),viewMode}}));

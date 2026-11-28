@@ -14,9 +14,13 @@
 import type { GraphNode, GraphEdge, Graph, PointerPosition, EdgeCurve, EdgeRoute, EdgeLabelPlacement, GraphTransform, StatementLink } from "./graph-types.ts";
 import { GRAPH_WIDTH, GRAPH_HEIGHT, NODE_TEXT_LEFT, WEBGL_NODE_THRESHOLD } from "./graph-config.ts";
 import { graphNodePresentation, graphNodeSize, edgeLabelSize, nodeCornerRadius, edgeGeometry, edgePortKey, edgeBendForLane, fitBoxes, computeEdgeLanes, computeEdgePorts, nodeBoundaryPoint, placeEdgeLabels } from "./graph-geometry.ts";
-import { createNodeMetadataSelector, applyGraphPositions, layoutDimensionsChanged } from "./graph-model.ts";
+import { createNodeMetadataSelector, applyGraphPositions, layoutDimensionsChanged, viewLayoutChange } from "./graph-model.ts";
 import { labelHoverBridge } from "./graph-hover.ts";
-import { canvasGraph, RDF_TYPE } from "./graph-canvas-scope.ts";
+import { RDF_TYPE } from "./graph-canvas-scope.ts";
+import { analyzeCollections, collectionRemovalIds, projectCollections } from "./graph-collections.ts";
+import { CollectionDetails } from "./collection-details.tsx";
+import { collectionContinuationQuery, COLLECTION_CONTINUATION_LIMIT } from "./collection-query.ts";
+import { collectionSelectionInView } from "./collection-selection.ts";
 import type { RangeDraft, FilterFacet, PredicateOption, ContextMenu, ViewMode, LoadBatch, NamedGroup, GraphHistorySnapshot, LayoutIntent } from "./explorer-types.ts";
 import { INCREMENTAL_LAYOUT_DURATION, PROGRAMMATIC_NODE_MOTION_DURATION, DOUBLE_TAP_DELAY, DOUBLE_TAP_DISTANCE, TAP_MOVE_TOLERANCE, DOUBLE_TAP_ZOOM_SENSITIVITY, HISTORY_LIMIT, INTERACTIVE_TRANSFORM_COMMIT_DELAY, DEFAULT_QUERY, SHOW_VALUES_STORAGE_KEY, SHOW_LABELS_STORAGE_KEY, readDisplayPreferences, DETAILS_ITEM_LIMIT, LEGEND_TYPE_LIMIT, LABEL_WAIT_MS, FACET_LIST_LIMIT, MORE_BADGE_NODE_LIMIT, EDGE_HIT_PIXELS, QUEUED_QUERY_ROW_LIMIT, SHADOW_NODE_LIMIT, LARGE_GRAPH_NODES } from "./explorer-config.ts";
 import { ARROW_MARKER, UNTYPED_IRI_TYPE, TYPE_PALETTE, LITERAL_VISUAL, BLANK_VISUAL, LOADING_IRI_VISUAL, typeVisual, facetValueVisual, primaryNodeType, nodeVisual, nodeTypeIds } from "./graph-visuals.ts";
@@ -175,7 +179,21 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
   const [query, setQuery] = useState(DEFAULT_QUERY);
   const [graph, setGraph] = useState<Graph>(() => ({ nodes: [], edges: [], revision: 0 }));
   const [showValues, setShowValues] = useState(() => readDisplayPreferences(browserStorage()).showValues);
-  const drawnGraph = useMemo(() => canvasGraph(graph, showValues), [graph, showValues]);
+  const [expandedCollections, setExpandedCollections] = useState<ReadonlySet<string>>(() => new Set());
+  const [connectedCollections, setConnectedCollections] = useState<ReadonlySet<string>>(() => new Set());
+  const collectionSettingsRef = useRef({ expandedHeads: expandedCollections, connectedHeads: connectedCollections });
+  collectionSettingsRef.current = { expandedHeads: expandedCollections, connectedHeads: connectedCollections };
+  const collectionAnalysis = useMemo(() => analyzeCollections(graph), [graph.nodes, graph.edges, graph.statementLinks]);
+  const collectionProjection = useMemo(() => projectCollections(graph, collectionAnalysis, {
+    showValues, expandedHeads: expandedCollections, connectedHeads: connectedCollections,
+  }), [graph, collectionAnalysis, showValues, expandedCollections, connectedCollections]);
+  const collectionProjectionRef = useRef(collectionProjection);
+  collectionProjectionRef.current = collectionProjection;
+  // Every layout, route, restoration and export uses the same view. The stored graph remains source RDF.
+  const drawCollections = useCallback((current: Graph, valuesVisible: boolean) => projectCollections(
+    current, analyzeCollections(current), { ...collectionSettingsRef.current, showValues: valuesVisible },
+  ).graph, []);
+  const drawnGraph = collectionProjection.graph;
   const largeGraph = drawnGraph.nodes.length >= LARGE_GRAPH_NODES;
   // Type links to a class with many instances are not drawn; they appear for the cards pointed at or selected.
   const classLinks = useMemo(
@@ -196,6 +214,13 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
   const [metadataEpoch, setMetadataEpoch] = useState(0);
   const [status, setStatus] = useState("");
   const [isQuerying, setIsQuerying] = useState(false);
+  const [blockedContinuations, setBlockedContinuations] = useState<ReadonlyMap<string, { edges: GraphEdge[]; scope: string }>>(() => new Map());
+  useEffect(() => {
+    setBlockedContinuations((current) => {
+      const retained = [...current].filter(([, blocked]) => blocked.edges === graph.edges && blocked.scope === graphScope);
+      return retained.length === current.size ? current : new Map(retained);
+    });
+  }, [graph.edges, graphScope]);
   const [isDiscoveringEdges, setIsDiscoveringEdges] = useState(false);
   const [expandingNodeIds, setExpandingNodeIds] = useState<Set<string>>(() => new Set());
   const [queryPanelOpen, setQueryPanelOpen] = useState(false);
@@ -328,6 +353,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
       keyDown: call("keyDown"),
       focus: call("focus"),
       more: call("more"),
+      collectionMember: call("collectionMember"),
     };
   }, []);
   /** A press on the background or on an edge; released without moving, it picks that edge (or the nearest one). */
@@ -488,7 +514,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
       const animationStartedAt = performance.now();
       const viewIsOurs = () => viewportTouchedAtRef.current < animationStartedAt;
       // The canvas renderer (500+ drawn nodes) jumps; SVG graphs animate, however many values they hide.
-      if (canvasGraph(targetGraph, showValuesRef.current).nodes.length >= LARGE_GRAPH_NODES) {
+      if (drawCollections(targetGraph, showValuesRef.current).nodes.length >= LARGE_GRAPH_NODES) {
         if (options.skipLayout && targetGraph.revision !== sourceGraph.revision) skipLayoutRevisionRef.current = targetGraph.revision;
         if (options.skipLayout) {
           graphRef.current = targetGraph;
@@ -710,7 +736,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
 
   /** Refresh arrow geometry without moving cards, including when a large graph becomes small again. */
   const applyRouting = (target: Graph, valuesVisible = showValuesRef.current) => {
-    const routed = routeDrawnGraph(target, valuesVisible);
+    const routed = routeDrawnGraph(drawCollections(target, valuesVisible), true);
     setEdgeBends(routed.bends);
     setEdgeRoutes(routed.routes);
   };
@@ -719,6 +745,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     version: 1,
     showValues,
     showAllEdgeLabels,
+    expandedCollectionIds: [...expandedCollections],
+    connectedCollectionIds: [...connectedCollections],
     viewMode,
     selectedFacetValues: [...facetValuesRef.current].map(([id, values]) => [id, [...values]]),
     facetModes: [...facetModesRef.current],
@@ -730,6 +758,11 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
   });
 
   const applyView = useCallback((view?: WorkspaceViewState) => {
+    const expandedHeads = new Set(view?.expandedCollectionIds ?? []);
+    const connectedHeads = new Set(view?.connectedCollectionIds ?? []);
+    collectionSettingsRef.current = { expandedHeads, connectedHeads };
+    setExpandedCollections(expandedHeads);
+    setConnectedCollections(connectedHeads);
     if (!view) {
       // Old workspaces show the user's stored display preferences (not the last view's) in the graph view, unfiltered.
       const display = readDisplayPreferences(browserStorage());
@@ -790,6 +823,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     layoutJobRef.current?.cancel();
     layoutJobRef.current = null;
     showValuesRef.current = snapshot.workspace.view.showValues;
+    applyView(snapshot.workspace.view);
     setProvenanceBatches(snapshot.provenanceBatches);
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
@@ -811,7 +845,6 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     setQuery(snapshot.workspace.query);
     setGraphScope(snapshot.workspace.scope ?? "default");
     // The view brings back the filters (like the selection), the panels and the card that was open.
-    applyView(snapshot.workspace.view);
     restoreNamedSnapshotRef.current(snapshot.namedSnapshot);
     applyRouting(snapshot.graph);
   }, [animateProgrammaticGraph, applyView, dismissContextMenu, invalidateAsyncRequests]);
@@ -836,26 +869,26 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     localLayoutNodeIdsRef.current = null;
     // Route for the Values setting the graph is shown with: its view's, or the stored preference (see applyView).
     showValuesRef.current = saved.view?.showValues ?? readDisplayPreferences(browserStorage()).showValues;
+    applyView(saved.view);
     applyRouting(saved.graph, showValuesRef.current);
     // The incoming revision belongs to another view; only this page's generation orders asynchronous work.
     const restoredGraph = { ...saved.graph, revision: graphRef.current.revision + 1 };
     // A stored graph comes with its own positions: changes are measured from what it showed.
-    setLaidOut(laidOutGraph(canvasGraph(restoredGraph, showValuesRef.current)));
+    setLaidOut(laidOutGraph(drawCollections(restoredGraph, showValuesRef.current)));
     animateProgrammaticGraph(restoredGraph, saved.transform, { skipLayout: true, duration: 0 });
     setQuery(saved.query);
     setProvenanceBatches(saved.provenanceBatches);
     setNamedGroups(saved.namedGroups);
     setManualSelectedNodeIds(new Set(saved.selectedNodeIds));
     setFocusedNodeId(saved.focusedNodeId);
-    setFocusedEdgeId(null);
+    setFocusedEdgeId(saved.view?.focusedEdgeId ?? null);
     setHoveredNodeId(null);
     setHoveredEdgeId(null);
     setPathHighlight(null);
     selectionAnchorRef.current = null;
     // A focused node dims the rest of the graph; its card says why.
-    setInspectorOpen(Boolean(saved.focusedNodeId));
+    setInspectorOpen(saved.view?.panels.inspector ?? Boolean(saved.focusedNodeId));
     setGraphScope(saved.scope ?? "default");
-    applyView(saved.view);
   };
   const captureWorkspace = (): WorkspacePayload => ({
     graph: graphRef.current,
@@ -880,7 +913,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     // Label preferences followed from other tabs or the browser are not this page's change (labelPolicyChanges).
     changes: [graph, transform, query, provenanceBatches, namedGroups, manualSelectedNodeIds, focusedNodeId, graphScope,
       showValues, showAllEdgeLabels, viewMode, selectedFacetValues, facetModes, labelPolicyChanges, queryPanelOpen,
-      filterSidebarOpen, navigatorOpen, provenanceOpen, inspectorOpen, focusedEdgeId],
+      filterSidebarOpen, navigatorOpen, provenanceOpen, inspectorOpen, focusedEdgeId, expandedCollections, connectedCollections],
     busy: isLayoutAnimating || isLayoutComputing || draggingNodeId !== null || isLargeGraphDragging,
     restore: (saved) => {
       if (graphRef.current.nodes.length) return false;
@@ -979,8 +1012,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
   );
   // Filters work on what the Graph view draws, so a facet never selects hidden values.
   const filterNodes = useMemo(
-    () => (showValues ? metadataNodes : canvasGraph({ nodes: metadataNodes, edges: graph.edges, revision: 0 }, false).nodes),
-    [graph.edges, metadataNodes, showValues],
+    () => drawCollections({ nodes: metadataNodes, edges: graph.edges, statementLinks: graph.statementLinks, revision: 0 }, showValues).nodes,
+    [drawCollections, graph.edges, graph.statementLinks, metadataNodes, showValues, expandedCollections, connectedCollections],
   );
   const drawnNodeIds = useMemo(() => new Set(filterNodes.map((node) => node.id)), [filterNodes]);
   // Failed type lookups wait here before they are asked again; each explorer (endpoint, scope) starts afresh.
@@ -1196,6 +1229,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     (selectedNodeIdList.length === 1
       ? nodeById.get(selectedNodeIdList[0])
       : undefined);
+  const blockedContinuation = inspectorNode ? blockedContinuations.get(inspectorNode.id) : undefined;
+  const inspectorContinuationBlocked = blockedContinuation?.edges === graph.edges && blockedContinuation.scope === graphScope;
   escapeTargetsRef.current = {
     card: Boolean(focusedNodeId || focusedEdgeId || (inspectorOpen && inspectorNode)),
     selection: manualSelectedNodeIds.size > 0,
@@ -1226,7 +1261,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
   const useWebglRenderer =
     !largeGraph && webglAvailable &&
     viewMode === "graph" &&
-    drawnGraph.nodes.length >= WEBGL_NODE_THRESHOLD;
+    drawnGraph.nodes.length >= WEBGL_NODE_THRESHOLD &&
+    // Membership connections are dashed view aids; the SVG layer preserves that distinction.
+    !drawnGraph.edges.some((edge) => Boolean(edge.collection));
   const namedGroupBounds = useMemo(
     () =>
       namedGroups.flatMap((group) => {
@@ -1279,12 +1316,12 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     const connected = new Set<string>();
     if (!activeNodeId) return connected;
     connected.add(activeNodeId);
-    graph.edges.forEach((edge) => {
+    drawnGraph.edges.forEach((edge) => {
       if (edge.source === activeNodeId) connected.add(edge.target);
       if (edge.target === activeNodeId) connected.add(edge.source);
     });
     return connected;
-  }, [activeNodeId, graph.edges]);
+  }, [activeNodeId, drawnGraph.edges]);
   const edgeLanes = useMemo(() => largeGraph ? new Map<string, number>() : computeEdgeLanes(shownGraph.edges), [shownGraph.edges, largeGraph]);
   const edgePorts = useMemo(
     () => largeGraph ? new Map<string, PointerPosition>() : computeEdgePorts(shownGraph.nodes, shownGraph.edges),
@@ -1294,8 +1331,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     const curves = new Map<string, EdgeCurve>();
     if (largeGraph) return curves;
     shownGraph.edges.forEach((edge) => {
-      const source = nodeById.get(edge.source);
-      const target = nodeById.get(edge.target);
+      const source = drawnNodeById.get(edge.source);
+      const target = drawnNodeById.get(edge.target);
       if (
         source?.x === undefined ||
         source.y === undefined ||
@@ -1321,7 +1358,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     const stable = stableCurves(curves, previousCurvesRef.current);
     previousCurvesRef.current = stable;
     return stable;
-  }, [edgeBends, edgeRoutes, edgeLanes, edgePorts, shownGraph.edges, nodeById, largeGraph]);
+  }, [edgeBends, edgeRoutes, edgeLanes, edgePorts, shownGraph.edges, drawnNodeById, largeGraph]);
   /** Collapsed class links of the cards pointed at or selected, drawn straight between the cards. */
   const revealedClassLinks = useMemo(() => {
     if (!classLinks.collapsed.length) return [];
@@ -1329,21 +1366,21 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     if (!revealed.size) return [];
     return classLinks.collapsed.flatMap((edge) => {
       if (!revealed.has(edge.source) && !revealed.has(edge.target)) return [];
-      const source = nodeById.get(edge.source), target = nodeById.get(edge.target);
+      const source = drawnNodeById.get(edge.source), target = drawnNodeById.get(edge.target);
       if (source?.x === undefined || source.y === undefined || target?.x === undefined || target.y === undefined) return [];
       return [{ edge, start: nodeBoundaryPoint(source, { x: target.x, y: target.y }), end: nodeBoundaryPoint(target, { x: source.x, y: source.y }) }];
     });
-  }, [activeNodeId, classLinks.collapsed, nodeById, selectedNodeIds]);
+  }, [activeNodeId, classLinks.collapsed, drawnNodeById, selectedNodeIds]);
   /** RDF 1.2 statements about statements, drawn from their node to the middle of the statement's edge. */
   const statementConnectors = useMemo(
     () =>
       largeGraph
         ? []
         : (drawnGraph.statementLinks ?? []).flatMap((link) => {
-            const curve = statementConnector(link, nodeById, edgeCurves);
+            const curve = statementConnector(link, drawnNodeById, edgeCurves);
             return curve ? [{ link, curve }] : [];
           }),
-    [drawnGraph.statementLinks, edgeCurves, largeGraph, nodeById],
+    [drawnGraph.statementLinks, edgeCurves, largeGraph, drawnNodeById],
   );
   /** What a click or hover near a line finds: the edges, and each statement's connector standing for the statement. */
   const edgeHitCurves = useMemo(() => {
@@ -1453,7 +1490,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
 
   useEffect(() => {
     // The layout places what the canvas draws; hidden values keep their last positions in the model.
-    const graphSnapshot = canvasGraph(graphRef.current, showValues);
+    const graphSnapshot = drawCollections(graphRef.current, showValues);
     layoutSizeSnapshotRef.current = {revision: graphSnapshot.revision, nodes: graphSnapshot.nodes};
     if (graphSnapshot.nodes.length === 0) return;
     if (skipLayoutRevisionRef.current === graphSnapshot.revision) {
@@ -1525,7 +1562,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
       const positionByEntityId = result.positions;
       if (!cancelled && graphRef.current.revision === graphSnapshot.revision) {
         const targetGraph = applyGraphPositions(graphRef.current, positionByEntityId);
-        const targetNodes = targetGraph.nodes;
+        const targetNodes = drawCollections(targetGraph, showValues).nodes;
         // A layout of the whole graph is what later changes are measured against, and its time estimates the next.
         if (!isIncremental && !isLocalLayout && !requestedLayout?.repairOnly) {
           const mode = requestedLayout?.mode ?? "network";
@@ -1652,6 +1689,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     graph.revision,
     layoutNonce,
     showValues,
+    expandedCollections,
+    connectedCollections,
+    drawCollections,
   ]);
 
   // Labels of the loaded resources. Declared after the layout effect, so a new graph's layout job is already with its
@@ -1665,7 +1705,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     // Every resource, in portions: the focused node and the drawn ones in view first (see metadata-lookup.ts).
     const ids=labelLookupIds(current,{
       focusedId: focusedNodeRef.current,
-      drawnIds: new Set(canvasGraph(current, showValuesRef.current).nodes.map((node) => node.id)),
+      drawnIds: new Set(drawCollections(current, showValuesRef.current).nodes.map((node) => node.id)),
       view: viewBounds(transformRef.current, GRAPH_WIDTH, GRAPH_HEIGHT),
     });
     setLabelEvidence({ explorer, evidence: { ...explorer.labelEvidence(ids), complete: false } });
@@ -1709,7 +1749,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
     const measured = layoutSizeSnapshotRef.current;
     if (!measured || measured.revision !== graph.revision) return;
     const timer = window.setTimeout(() => {
-      const current = canvasGraph(graphRef.current, showValuesRef.current);
+      const current = drawCollections(graphRef.current, showValuesRef.current);
       if (current.revision !== measured.revision) return;
       // The canvas renderer draws nodes as dots, whatever their labels: a repair would only move them about.
       if (current.nodes.length >= LARGE_GRAPH_NODES) return;
@@ -2121,15 +2161,22 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
    */
   const placeOnlyNewNodes = useCallback((before: Graph, after: Graph) => {
     if (!before.nodes.length) return;
-    const previous = new Set(before.nodes.map((node) => node.id));
-    const added = after.nodes.flatMap((node) => (previous.has(node.id) ? [] : [node.id]));
+    const { added, repair } = viewLayoutChange(drawCollections(before, showValuesRef.current), drawCollections(after, showValuesRef.current));
+    if (repair) {
+      // Completing a collection can remove visible cells and enlarge its head, even without adding any raw node.
+      skipLayoutRevisionRef.current = null;
+      localLayoutNodeIdsRef.current = null;
+      requestedLayoutRef.current = { mode: "network", repairOnly: true };
+      return;
+    }
     if (added.length) localLayoutNodeIdsRef.current = new Set(added);
     else skipLayoutRevisionRef.current = after.revision;
-  }, []);
+  }, [drawCollections]);
 
   const execute = useCallback(
     /** Resolves to false when something the user started meanwhile superseded the query. */
-    async (queryToRun = query, replace = true, endpointToRun = endpoint, rowLimit?: number): Promise<boolean> => {
+    async (queryToRun = query, replace = true, endpointToRun = endpoint, rowLimit?: number,
+      onResult?: (before: Graph, after: Graph) => void): Promise<boolean> => {
       if (!endpointToRun) {
         setStatus("No repository is selected.");
         return true;
@@ -2167,6 +2214,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
                 ? "The query returned no statements; the graph is unchanged."
                 : "The query returned no statements.",
           );
+          onResult?.(graphRef.current, graphRef.current);
           return true;
         }
         const batch = createBatch(
@@ -2194,8 +2242,9 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
         setProvenanceBatches((current) =>
           replace ? [batch] : [...current, batch],
         );
+        const currentGraph = graphRef.current;
         const merged = explorer.apply(
-          mergeStatementLinks(mergeTriples(graphRef.current, triples, replace, batch.id), links, batch.id),
+          mergeStatementLinks(mergeTriples(currentGraph, triples, replace, batch.id), links, batch.id),
         );
         if (replace) {
           layoutIntentRef.current = {
@@ -2212,6 +2261,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
         performance.mark?.("graph-explorer:answer-shown", { detail: { revision: merged.revision, nodes: merged.nodes.length } });
         setGraph(merged);
         setStatus(loadedStatus(triples.length + links.length, cut, performance.now() - started));
+        onResult?.(currentGraph, merged);
         return true;
       } catch (error) {
         if (queryRunRef.current !== runId) return false;
@@ -2649,8 +2699,8 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
           startTransform: { ...transformRef.current },
         };
         setGraph(seeded);
-        const drawnBefore = canvasGraph(currentGraph, showValuesRef.current).nodes.length;
-        const drawnAfter = canvasGraph(seeded, showValuesRef.current).nodes.length;
+        const drawnBefore = drawCollections(currentGraph, showValuesRef.current).nodes.length;
+        const drawnAfter = drawCollections(seeded, showValuesRef.current).nodes.length;
         setStatus(
           drawnAfter > drawnBefore
             ? `Added ${drawnAfter - drawnBefore} linked ${drawnAfter - drawnBefore === 1 ? "node" : "nodes"}.`
@@ -2772,7 +2822,7 @@ export function GraphExplorerApp({ basePath, repositoryId, serverIdentity, serve
         const added = mergeResourceNodes(currentGraph, terms);
         if (added === currentGraph) {
           // A class only reached through rdf:type is drawn as its instances' colour unless Values shows types as nodes.
-          const drawnIds = new Set(canvasGraph(currentGraph, showValuesRef.current).nodes.map((node) => node.id));
+          const drawnIds = new Set(drawCollections(currentGraph, showValuesRef.current).nodes.map((node) => node.id));
           setStatus(
             ids.every((id) => drawnIds.has(id))
               ? "Already in the graph."
@@ -3114,12 +3164,103 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     if (isNarrowGraphPanel()) setInspectorOpen(false);
   };
 
+  /** These choices affect the view only. Keep synchronous refs aligned for routes and asynchronous layouts. */
+  const changeCollectionView = (expandedHeads: ReadonlySet<string>, connectedHeads: ReadonlySet<string>) => {
+    pushHistory();
+    const current = graphRef.current;
+    const projection = projectCollections(current, analyzeCollections(current), {
+      showValues: showValuesRef.current, expandedHeads, connectedHeads,
+    });
+    setManualSelectedNodeIds(collectionSelectionInView(manualSelectedNodeIdsRef.current, projection));
+    const focus = focusedNodeRef.current;
+    if (focus) setFocusedNodeId(collectionSelectionInView([focus], projection).values().next().value ?? null);
+    collectionSettingsRef.current = { expandedHeads, connectedHeads };
+    setExpandedCollections(expandedHeads);
+    setConnectedCollections(connectedHeads);
+    skipLayoutRevisionRef.current = null;
+    localLayoutNodeIdsRef.current = null;
+    layoutIntentRef.current = null;
+    setPathHighlight(null);
+  };
+
+  /** A raw RDF path or statement needs its cells; selecting a member only needs its optional connection. */
+  const revealCollectionNodes = (ids: Iterable<string>, structure = false) => {
+    const projection = collectionProjectionRef.current;
+    const expanded = new Set(collectionSettingsRef.current.expandedHeads);
+    const connected = new Set(collectionSettingsRef.current.connectedHeads);
+    let revealValues = false;
+    for (const id of ids) {
+      if (structure && !showValuesRef.current && nodeById.get(id)?.kind === "literal") revealValues = true;
+      const head = projection.hiddenCells.get(id);
+      if (head) expanded.add(head);
+      if (structure && projection.collapsedHeads.has(id)) expanded.add(id);
+      for (const owner of projection.hiddenMembers.get(id) ?? []) {
+        if (structure) expanded.add(owner);
+        else connected.add(owner);
+      }
+    }
+    const changed = expanded.size !== collectionSettingsRef.current.expandedHeads.size || connected.size !== collectionSettingsRef.current.connectedHeads.size;
+    if (changed) {
+      changeCollectionView(expanded, connected);
+    }
+    if (revealValues) {
+      if (!changed) pushHistory();
+      showValuesRef.current = true;
+      setShowValues(true);
+      skipLayoutRevisionRef.current = null;
+    }
+  };
+
+  const toggleCollectionStructure = (headId: string) => {
+    const expanded = new Set(collectionSettingsRef.current.expandedHeads);
+    if (expanded.has(headId)) expanded.delete(headId);
+    else expanded.add(headId);
+    changeCollectionView(expanded, collectionSettingsRef.current.connectedHeads);
+  };
+
+  const toggleCollectionConnections = (headId: string) => {
+    const connected = new Set(collectionSettingsRef.current.connectedHeads);
+    if (connected.has(headId)) connected.delete(headId);
+    else connected.add(headId);
+    changeCollectionView(collectionSettingsRef.current.expandedHeads, connected);
+  };
+
+  const selectCollectionMember = (headId: string, memberId: string) => {
+    const connected = new Set(collectionSettingsRef.current.connectedHeads);
+    if (!connected.has(headId)) {
+      connected.add(headId);
+      changeCollectionView(collectionSettingsRef.current.expandedHeads, connected);
+    }
+    selectNode(memberId);
+  };
+
+  const inspectCollectionCell = (headId: string, cellId: string) => {
+    const expanded = new Set(collectionSettingsRef.current.expandedHeads);
+    if (collectionProjectionRef.current.collapsedHeads.has(headId) && !expanded.has(headId)) {
+      expanded.add(headId);
+      changeCollectionView(expanded, collectionSettingsRef.current.connectedHeads);
+    }
+    selectNode(cellId);
+  };
+
+  const loadCollectionContinuation = (headId: string) => {
+    const continuation = collectionAnalysis.collections.get(headId)?.continuationId;
+    if (!continuation || !isQueryableResource(continuation) || isQuerying) return;
+    void execute(collectionContinuationQuery(continuation, graphScope, graphRef.current), false, endpoint, COLLECTION_CONTINUATION_LIMIT,
+      (before, after) => {
+        if (after.edges.length > before.edges.length || (after.statementLinks?.length ?? 0) > (before.statementLinks?.length ?? 0)) return;
+        setBlockedContinuations((current) => new Map(current).set(headId, { edges: after.edges, scope: graphScope }));
+        setStatus("No new list statements were returned. The continuation is still unknown; expand its owning resource or load a broader query to continue.");
+      });
+  };
+
   /**
    * A plain click or tap: focus the node and show its details. A click or tap (`byPointer`) may be the first half of a
    * double click: until that window has passed, the card lets presses through, so the second one reaches the node even
    * where the card opened over it, and the node stays where it is.
    */
   const selectNode = (nodeId: string | null, byPointer = false) => {
+    if (nodeId) revealCollectionNodes([nodeId]);
     setFocusedNodeId(nodeId);
     if (nodeId) setRovingNodeId(nodeId);
     setFocusedEdgeId(null);
@@ -3188,6 +3329,13 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
   // The current implementations behind the stable `nodeHandlers` (see graph-canvas-view.tsx).
   /** Opens the statement card of an edge (null closes it); a node's card closes. */
   const selectEdge = (edgeId: string | null) => {
+    const summary = edgeId ? drawnGraph.edges.find((edge) => edge.id === edgeId)?.collection : undefined;
+    if (summary) {
+      selectNode(summary.headId);
+      return;
+    }
+    const statement = edgeId ? graph.edges.find((edge) => edge.id === edgeId) : undefined;
+    if (statement) revealCollectionNodes([statement.source, statement.target], true);
     setFocusedEdgeId(edgeId);
     if (!edgeId) return;
     setFocusedNodeId(null);
@@ -3318,6 +3466,9 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
   };
 
   nodeHandlerImpl.current = {
+    collectionMember(headId, memberId) {
+      selectCollectionMember(headId, memberId);
+    },
     click(nodeId, event) {
       event.stopPropagation();
       if (performance.now() < suppressNodeClickUntilRef.current) {
@@ -3540,6 +3691,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       setStatus("No path connects these two nodes in the loaded graph.");
       return;
     }
+    revealCollectionNodes(result.nodeIds, true);
     setPathHighlight(result);
     setFocusedNodeId(null);
     setStatus(
@@ -3554,6 +3706,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
       return;
     }
     clearFacetFilters();
+    revealCollectionNodes([...selectedNodeIdList, ...common], true);
     setManualSelectedNodeIds(common);
     setPathHighlight({
       nodeIds: new Set([...selectedNodeIdList, ...common]),
@@ -3697,7 +3850,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     localLayoutNodeIdsRef.current = null;
     pushHistory();
     // Hiding takes nodes away; everything else stays where it is.
-    const remaining = removeGraphNodes(graphRef.current, nodeIds);
+    const remaining = removeGraphNodes(graphRef.current, collectionRemovalIds(collectionProjectionRef.current, nodeIds));
     // The values and classes only the hidden nodes used go too: groups, selection and card keep only what is left.
     const present = new Set(remaining.nodes.map((node) => node.id));
     skipLayoutRevisionRef.current = remaining.revision;
@@ -3728,7 +3881,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     localLayoutNodeIdsRef.current = null;
     pushHistory();
     // As Hide: the leaves go (with the values and classes only they used), everything else stays where it is.
-    const remaining = removeGraphNodes(graphRef.current, cluster);
+    const remaining = removeGraphNodes(graphRef.current, collectionRemovalIds(collectionProjectionRef.current, cluster));
     const present = new Set(remaining.nodes.map((node) => node.id));
     skipLayoutRevisionRef.current = remaining.revision;
     setGraph(remaining);
@@ -3843,7 +3996,7 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
     skipLayoutRevisionRef.current = next.revision;
     layoutIntentRef.current = null;
     localLayoutNodeIdsRef.current = null;
-    setLaidOut(laidOutGraph(canvasGraph(next, showValuesRef.current)));
+    setLaidOut(laidOutGraph(drawCollections(next, showValuesRef.current)));
     graphRef.current = next; setGraph(next);
     const fitted = fitBoxes(next.nodes.map(node => ({x:node.x ?? 0,y:node.y ?? 0,width:220,height:50})));
     transformRef.current = fitted; setTransform(fitted);
@@ -3989,14 +4142,14 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
               finishTransientAction();
               setViewMode("graph");
               // Showing values places only them, next to their resources; hiding them moves nothing.
-              const withoutValues = new Set(canvasGraph(graphRef.current, false).nodes.map((node) => node.id));
+              const withoutValues = new Set(drawCollections(graphRef.current, false).nodes.map((node) => node.id));
               if (showValuesRef.current) {
                 skipLayoutRevisionRef.current = graphRef.current.revision;
                 // Route the next projection: the visibility ref still describes Values on until React renders.
                 applyRouting(graphRef.current, false);
               } else
                 localLayoutNodeIdsRef.current = new Set(
-                  canvasGraph(graphRef.current, true).nodes.flatMap((node) => (withoutValues.has(node.id) ? [] : [node.id])),
+                  drawCollections(graphRef.current, true).nodes.flatMap((node) => (withoutValues.has(node.id) ? [] : [node.id])),
                 );
               setShowValues((current) => {
                 try {
@@ -4318,7 +4471,26 @@ ${connectionQuery(iriIds.slice(0,32),graphScope)}`;
                   // The statement card replaces this one; the keyboard continues in it.
                   window.requestAnimationFrame(() => detailsCardRef.current?.focus({ preventScroll: true }));
                 }}
-              />
+              >
+                {collectionAnalysis.collections.has(inspectorNode.id) ? (
+                  <CollectionDetails
+                    analysis={collectionAnalysis}
+                    nodes={metadataNodeById}
+                    headId={inspectorNode.id}
+                    expanded={expandedCollections.has(inspectorNode.id)}
+                    connected={connectedCollections.has(inspectorNode.id)}
+                    loading={isQuerying}
+                    canLoad={!inspectorContinuationBlocked && isQueryableResource(collectionAnalysis.collections.get(inspectorNode.id)?.continuationId ?? "")}
+                    continuationUnavailableReason={inspectorContinuationBlocked
+                      ? "No new statements were returned. Expand the owning resource or load a broader query to continue." : undefined}
+                    onToggleStructure={() => toggleCollectionStructure(inspectorNode.id)}
+                    onToggleConnections={() => toggleCollectionConnections(inspectorNode.id)}
+                    onLoad={() => loadCollectionContinuation(inspectorNode.id)}
+                    onMember={(memberId) => selectCollectionMember(inspectorNode.id, memberId)}
+                    onCell={(cellId) => inspectCollectionCell(inspectorNode.id, cellId)}
+                  />
+                ) : null}
+              </NodeDetailsCard>
             ) : null}
             {largeGraph ? <LargeGraphCanvas
               graph={drawnGraph} transform={transform} selected={selectedNodeIds} focused={focusedNodeId}

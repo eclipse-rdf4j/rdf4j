@@ -16,6 +16,7 @@ import { nodeVisual } from "./graph-visuals.ts";
 import { IndexedGraphGl } from "./graph-indexed-gl.ts";
 import { GRAPH_WIDTH, GRAPH_HEIGHT } from "./graph-config.ts";
 import { DOUBLE_TAP_DELAY } from "./explorer-config.ts";
+import { collectionSummary } from "./collection-presentation.ts";
 import {
   pinchPanTransform,
   zoomTransformAt,
@@ -464,11 +465,11 @@ export class CanvasGraph {
       ctx.beginPath();
       const step =
         this.transform.k < 0.06
-          ? Math.max(1, Math.ceil(this.scene.edges.length / 16000))
+          ? Math.max(1, Math.ceil(this.scene.solidEdges.length / 16000))
           : 1;
-      for (let e = 0; e < this.scene.edges.length / 2; e += step) {
-        const a = this.scene.edges[2 * e],
-          b = this.scene.edges[2 * e + 1];
+      for (let e = 0; e < this.scene.solidEdges.length / 2; e += step) {
+        const a = this.scene.solidEdges[2 * e],
+          b = this.scene.solidEdges[2 * e + 1];
         ctx.moveTo(x(a), y(a));
         ctx.lineTo(x(b), y(b));
       }
@@ -486,6 +487,23 @@ export class CanvasGraph {
         )
           ctx.fillRect(px - size / 2, py - size / 2, size, size);
       }
+    }
+    // Membership summaries never enter the solid RDF layer, including when WebGL is active.
+    if (this.scene.collectionEdges.length) {
+      ctx.strokeStyle = palette.edge;
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      for (const e of this.scene.collectionEdges) {
+        const a = this.scene.edges[2 * e], b = this.scene.edges[2 * e + 1];
+        const ax = x(a), ay = y(a), bx = x(b), by = y(b);
+        if ((ax < 0 && bx < 0) || (ax > this.width && bx > this.width) ||
+          (ay < 0 && by < 0) || (ay > this.height && by > this.height)) continue;
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(bx, by);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
     }
     const focused = props.focused
         ? this.scene.index.get(props.focused)
@@ -573,6 +591,7 @@ export class CanvasGraph {
       text(group.name, (minX + maxX) / 2, minY - 28, palette.groupLabel);
     }
     for (const e of edgeDetails) {
+      const membership = Boolean(this.scene.graph.edges[e].collection);
       const a = this.scene.edges[2 * e],
         b = this.scene.edges[2 * e + 1],
         ax = x(a),
@@ -582,6 +601,7 @@ export class CanvasGraph {
         self = a === b;
       ctx.strokeStyle = palette.edgeDetail;
       ctx.lineWidth = 1;
+      ctx.setLineDash(membership ? [4, 3] : []);
       ctx.beginPath();
       if (self) ctx.arc(ax, ay - 14, 14, 0, Math.PI * 2);
       else {
@@ -589,7 +609,8 @@ export class CanvasGraph {
         ctx.lineTo(bx, by);
       }
       ctx.stroke();
-      if (!self) {
+      ctx.setLineDash([]);
+      if (!self && !membership) {
         const angle = Math.atan2(by - ay, bx - ax),
           tx = bx - Math.cos(angle) * 7,
           ty = by - Math.sin(angle) * 7;
@@ -615,7 +636,7 @@ export class CanvasGraph {
       ctx.beginPath();
       ctx.arc(px, py, i === active ? 6 : 4, 0, 2 * Math.PI);
       ctx.fill();
-      const plate = text(node.label, px, py + 16, palette.label, i === active);
+      const plate = text(node.collection ? collectionSummary(node.collection) : node.label, px, py + 16, palette.label, i === active);
       if (plate) labels.push({node: i, ...plate});
     }
     this.labels = labels;

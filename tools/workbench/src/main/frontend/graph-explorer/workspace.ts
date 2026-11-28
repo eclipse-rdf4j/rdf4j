@@ -88,6 +88,9 @@ export type WorkspaceViewState = {
   version: 1;
   showValues: boolean;
   showAllEdgeLabels: boolean;
+  /** Per-list presentation only; the graph always holds the source RDF statements. */
+  expandedCollectionIds?: string[];
+  connectedCollectionIds?: string[];
   viewMode: ViewMode;
   selectedFacetValues: Array<[string, string[]]>;
   facetModes: Array<[string, "any" | "all"]>;
@@ -102,6 +105,27 @@ export type WorkspaceViewState = {
   panels: { query: boolean; filters: boolean; navigator: boolean; history: boolean; inspector: boolean };
   focusedEdgeId: string | null;
 };
+
+/** Keep per-collection choices aligned when node identities migrate or missing nodes are pruned. */
+export function mapCollectionViewIds(view: WorkspaceViewState, mapId: (id: string) => string | undefined): WorkspaceViewState {
+  if (view.expandedCollectionIds === undefined && view.connectedCollectionIds === undefined) return view;
+  const mapped = (ids: string[]) => {
+    // Explicit saves validate after pruning missing references; malformed fields must remain invalid for that check.
+    if (!Array.isArray(ids)) return ids;
+    const result: string[] = [];
+    for (const id of ids) {
+      if (typeof id !== "string") return ids;
+      const next = mapId(id);
+      if (next !== undefined) result.push(next);
+    }
+    return result;
+  };
+  return {
+    ...view,
+    ...(view.expandedCollectionIds === undefined ? {} : { expandedCollectionIds: mapped(view.expandedCollectionIds) }),
+    ...(view.connectedCollectionIds === undefined ? {} : { connectedCollectionIds: mapped(view.connectedCollectionIds) }),
+  };
+}
 
 export type WorkspacePayload = {
   graph: WorkspaceGraph;
@@ -391,6 +415,9 @@ function parseView(value: unknown): WorkspaceViewState | null {
   };
   const strings = (value: unknown): string[] | null => Array.isArray(value) && value.length <= MAX_NODES &&
     value.every(item => stringValue(item) !== null) ? value.slice() : null;
+  const expandedCollectionIds = view.expandedCollectionIds === undefined ? undefined : strings(view.expandedCollectionIds);
+  const connectedCollectionIds = view.connectedCollectionIds === undefined ? undefined : strings(view.connectedCollectionIds);
+  if (expandedCollectionIds === null || connectedCollectionIds === null) return null;
   const selectedFacetValues = entries(view.selectedFacetValues, strings);
   const facetModes = entries<"any" | "all">(view.facetModes, mode => mode === "any" || mode === "all" ? mode : null);
   const rangeDrafts = entries<RangeDraft>(view.rangeDrafts, value => {
@@ -406,6 +433,8 @@ function parseView(value: unknown): WorkspaceViewState | null {
     !(view.labelPolicyFollowsPreferences === undefined || typeof view.labelPolicyFollowsPreferences === "boolean") ||
     !(view.focusedEdgeId === null || stringValue(view.focusedEdgeId) !== null)) return null;
   return { version: 1, showValues: view.showValues, showAllEdgeLabels: view.showAllEdgeLabels, viewMode: view.viewMode as ViewMode,
+    ...(expandedCollectionIds ? { expandedCollectionIds } : {}),
+    ...(connectedCollectionIds ? { connectedCollectionIds } : {}),
     selectedFacetValues, facetModes, rangeDrafts,
     labelPolicy: { languages, properties, languagesConfigured: policy.languagesConfigured, propertiesConfigured: policy.propertiesConfigured },
     ...(typeof view.labelPolicyFollowsPreferences === "boolean"
@@ -569,7 +598,11 @@ function parseWorkspaceObject(parsed: unknown, options: {repositoryReferences?: 
       ? payload.savedAt
       : null;
   // A view this version cannot read (a later version's, say) is left out: the graph opens with the page's own view.
-  const view = payload?.view === undefined ? undefined : parseView(payload.view) ?? undefined;
+  const parsedView = payload?.view === undefined ? undefined : parseView(payload.view) ?? undefined;
+  const view = parsedView ? mapCollectionViewIds(parsedView, (id) => {
+    const mapped = nodeIdMap.get(id) ?? id;
+    return nodeIds.has(mapped) ? mapped : undefined;
+  }) : undefined;
 
   return {
     graph: { nodes: nodeList, edges: edgeList, revision, ...(graphRecord.statementLinks !== undefined ? { statementLinks } : {}) },
